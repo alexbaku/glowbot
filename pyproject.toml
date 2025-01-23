@@ -10,5 +10,6 @@ dependencies = [
     "pydantic>=2.10.4",
     "pydantic-settings>=2.7.1",
     "python-multipart>=0.0.20",
+    "twilio>=9.4.3",
     "uvicorn>=0.34.0",
 ]

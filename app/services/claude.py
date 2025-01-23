@@ -1,10 +1,10 @@
 from anthropic import Anthropic
-from app.config import settings
+from app.config import get_settings
 
 class ClaudeService:
     """Service for interacting with Claude AI"""
     def __init__(self):
-        self.client = Anthropic(api_key=settings.CLAUDE_API_KEY)
+        self.client = Anthropic(api_key=get_settings.CLAUDE_API_KEY)
     
     async def analyze_skin(self, image_url: str) -> str:
         """Analyze skin condition from image"""
