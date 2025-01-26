@@ -1,11 +1,11 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from app.models.user import WhatsAppMessage, UserProfile
 from app.services.claude import ClaudeService
+from app.services.twilio import WhatsAppService
+from app.config import Settings
 
 app = FastAPI(title="GlowBot.AI")
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,24 +15,27 @@ app.add_middleware(
 )
 
 # Initialize services
-claude_service = ClaudeService()
+settings = Settings()
+claude_service = ClaudeService(settings)
+whatsapp_service = WhatsAppService(settings)
 
 @app.get("/")
 async def health_check():
-    """API health check endpoint"""
     return {"status": "healthy", "service": "GlowBot.AI"}
 
 @app.post("/webhook/whatsapp")
-async def whatsapp_webhook(message: WhatsAppMessage):
-    """Handle incoming WhatsApp messages"""
+async def whatsapp_webhook(request: Request):
     try:
-        if message.media_url:
-            # Handle image analysis
-            analysis = await claude_service.analyze_skin(message.media_url)
-            return {"analysis": analysis}
-        else:
-            # Handle text message
-            response = "Thanks for your message! Please send a photo of your skin for analysis."
-            return {"message": response}
+        form_data = await request.form()
+        message_data = whatsapp_service.format_incoming_message(dict(form_data))
+        
+        response = await claude_service.get_response(message_data['body'])
+        
+        await whatsapp_service.send_message(
+            to=message_data['from_number'],
+            message=response
+        )
+        
+        return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

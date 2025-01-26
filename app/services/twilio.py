@@ -1,20 +1,20 @@
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 from fastapi import HTTPException
-from app.config import get_settings
+from app.config import Settings
 from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
 
 class WhatsAppService:
-    def __init__(self):
-        self.settings = get_settings()
+    def __init__(self, settings: Settings):
+        self.settings = settings
         self.client = Client(
-            self.settings.TWILIO_ACCOUNT_SID, 
-            self.settings.TWILIO_AUTH_TOKEN
+            self.settings.twilio_account_sid, 
+            self.settings.twilio_auth_token
         )
-        self.whatsapp_number = self.settings.WHATSAPP_NUMBER
+        self.whatsapp_number = self.settings.twilio_phone_number
 
     async def send_message(
         self, 
@@ -31,13 +31,13 @@ class WhatsAppService:
             }
 
             if media_url:
-                message_params['media_url'] = [media_url]
+                message_params['media_url'] = media_url
 
-            message = self.client.messages.create(**message_params)
+            twilio_message = self.client.messages.create(**message_params)
             
             return {
                 "status": "success",
-                "message_sid": message.sid,
+                "message_sid": twilio_message.sid,
                 "to": to
             }
         except TwilioRestException as e:
