@@ -14,3 +14,8 @@ dependencies = [
     "twilio>=9.4.3",
     "uvicorn>=0.34.0",
 ]
+
+[dependency-groups]
+dev = [
+    "notebook>=7.3.2",
+]
