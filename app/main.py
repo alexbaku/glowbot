@@ -4,6 +4,11 @@ from app.services.claude import ClaudeService
 from app.services.twilio import WhatsAppService
 from app.services.conversation import ConversationService
 from app.config import Settings
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="GlowBot.AI")
 
@@ -19,7 +24,7 @@ app.add_middleware(
 settings = Settings()
 claude_service = ClaudeService(settings)
 whatsapp_service = WhatsAppService(settings)
-conversation_service = ConversationService(claude_service)
+
 
 @app.get("/")
 async def health_check():
@@ -30,11 +35,14 @@ async def whatsapp_webhook(request: Request):
     try:
         form_data = await request.form()
         message_data = whatsapp_service.format_incoming_message(dict(form_data))
+
+        user_id = message_data['from_number']
+        user_message = message_data['body']
         
-        # Process the message through the conversation service
-        response = await conversation_service.process_message(
-            message_data['from_number'],
-            message_data['body']
+        # Process message with state-aware Claude service
+        response = await claude_service.get_response(
+            user_id=user_id,
+            user_input=user_message
         )
         
         # Send response back through WhatsApp
@@ -45,28 +53,5 @@ async def whatsapp_webhook(request: Request):
         
         return {"status": "success"}
     except Exception as e:
+        logger.error(f"Error in webhook: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-# Development endpoint for testing conversation flow without WhatsApp
-@app.post("/dev/chat")
-async def dev_chat(request: Request):
-    try:
-        data = await request.json()
-        user_id = data.get("user_id", "test_user")
-        message = data.get("message", "")
-        
-        if not message:
-            return {"error": "Message is required"}
-        
-        response = await conversation_service.process_message(user_id, message)
-        
-        # Also return the current context for debugging
-        context = conversation_service.get_context(user_id)
-        
-        return {
-            "response": response,
-            "state": context.state,
-            "context": context.to_dict()
-        }
-    except Exception as e:
-        return {"error": str(e)}
