@@ -6,7 +6,7 @@ from anthropic import AsyncAnthropic
 from anthropic.types import MessageParam
 
 from app.config import Settings
-from app.models.conversation import (
+from app.models.conversation_schemas import (
     ConversationContext,
     ConversationState,
     InterviewAction,
