@@ -1,32 +1,333 @@
+import json
+import logging
+from typing import Any, Dict, List, Optional
 from anthropic import AsyncAnthropic
 from anthropic.types import MessageParam
-import logging
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.repositories import get_conversation_repository, get_user_repository
 from app.config import Settings
+from app.models.conversation_schemas import (
+    ConversationContext,
+    ConversationState,
+    InterviewAction,
+    InterviewMessage,
+)
 
 logger = logging.getLogger(__name__)
 
+
 class ClaudeService:
-    """Service for interacting with Claude AI"""
-    def __init__(self, settings:Settings):
+    """Enhanced service for interacting with Claude AI"""
+
+    def __init__(self, settings: Settings):
         self.client = AsyncAnthropic(api_key=settings.claude_api_key)
-        self.MODEL = "claude-3-opus-20240229"
-        self.system_prompt = """You are GlowBot, a friendly skincare consultant. Provide concise, helpful skincare advice."""
+        self.conversation_repo = get_conversation_repository()
+        self.user_repo = get_user_repository()
+        self.MODEL = "claude-sonnet-4-5-20250929"
+        self.base_system_prompt = """You are Glowbot, a smart skincare assistant who helps users create personalized skincare routines. 
+            Interview users naturally, asking one question at a time while maintaining a friendly, conversational tone. 
+            Focus on gathering essential information: age, skin type, current concerns, health considerations (pregnancy, medications, allergies), and current skincare routine.
+
+            Be concise in your responses, remembering this is a chat conversation. 
+            Progress through information gathering logically - start with basic skin information, then health safety checks, current routine assessment, and finally provide personalized recommendations. 
+            Don't move to recommendations until you have all necessary information. If users mention severe skin conditions, always recommend consulting a dermatologist.
+
+            When making recommendations, structure them into morning and evening routines with clear usage instructions. 
+            Include basic safety information like patch testing and potential product interactions. 
+            Keep responses brief but informative, and don't hesitate to ask clarifying questions when needed to ensure proper recommendations.
+            Always match the user's language exactly and do not switch languages unless the user does.
+            """
+    def _detect_language(self, text: str) -> str:
+        # Hebrew Unicode range
+        for char in text:
+            if "\u0590" <= char <= "\u05FF":
+                return "hebrew"
+        return "english"
+        
+    def _get_state_specific_prompt(self, state: ConversationState) -> str:
+        """Get additional prompt instructions based on the current state"""
+
+        state_prompts = {
+            ConversationState.GREETING: """
+        You're starting a new conversation. Greet the user warmly, introduce yourself as GlowBot,
+        and explain that you're here to help create a personalized skincare routine.
+        Ask only ONE question at a time. First, confirm if they're 18 or older (for safety reasons).
+        """,
+            ConversationState.AGE_VERIFICATION: """
+        You need to verify the user's age. Confirm if they are 18 or older.
+        If they confirm, update the collected_info to include {"skin_profile": {"age_verified": true}}
+        """,
+            ConversationState.SKIN_TYPE: """
+        You need to determine the user's skin type. Ask how they would describe their skin:
+        - Dry (tight, flaky)
+        - Oily (shiny, prone to breakouts)
+        - Combination (oily T-zone, dry cheeks)
+        - Normal
+        - Not sure
+
+        Update collected_info with {"skin_profile": {"skin_type": "their skin type"}}
+        """,
+            ConversationState.SKIN_CONCERNS: """
+        Find out the user's primary skin concerns. They can select multiple:
+        - Hyperpigmentation (dark spots, melasma)
+        - Signs of aging (fine lines, wrinkles)
+        - Dryness/Dehydration
+        - Acne
+        - Uneven texture
+        - Milia
+        - Rosacea
+        - Enlarged pores
+        - Other (let them describe)
+
+        Update collected_info with {"skin_profile": {"concerns": ["concern1", "concern2"]}}
+        """,
+            ConversationState.HEALTH_CHECK: """
+        Find out if the user has any important health considerations:
+        - Are they pregnant, breastfeeding, or planning pregnancy?
+        - Do they have any skin sensitivities or allergies?
+        - Are they using prescription medications that might affect skin (retinoids, antibiotics, Accutane)?
+
+        Update health_info in collected_info accordingly.
+        """,
+            ConversationState.SUN_EXPOSURE: """
+        Determine the user's sun exposure level:
+        - Minimal (mostly indoors)
+        - Moderate (1-3 hours outside)
+        - High (3+ hours outside)
+        Also ask if they spend time near windows during the day.
+
+        Update collected_info with {"skin_profile": {"sun_exposure": "their exposure level"}}
+        """,
+            ConversationState.CURRENT_ROUTINE: """
+        Ask about their current skincare routine:
+        1. Morning Routine:
+        - Cleanser?
+        - Treatments/Serums?
+        - Moisturizer?
+        - Sunscreen?
+        2. Evening Routine:
+        - Makeup removal method?
+        - Cleanser?
+        - Treatments/Serums?
+        - Moisturizer?
+
+        Update routine in collected_info with what they share.
+        """,
+            ConversationState.PRODUCT_PREFERENCES: """
+        Find out their product preferences:
+        - Budget range (budget-friendly/mid-range/high-end)
+        - Vegan
+        - Cruelty-free
+        - Clean/natural ingredients
+        - Fragrance-free
+        - Any other specific requirements
+
+        Update preferences in collected_info with their answers.
+        """,
+            ConversationState.SUMMARY: """
+        You've collected all necessary information. Provide a summary of what you've learned about their skin:
+        - Skin Profile (type, concerns, sun exposure)
+        - Health Considerations 
+        - Current Routine
+        - Product Preferences
+
+        Ask if there's anything they'd like to add or modify.
+        Set action to "done" to complete the consultation.
+        """,
+            ConversationState.COMPLETE: """
+        The consultation is complete. Thank the user for providing their information and let them know
+        you'll create a personalized skincare routine based on what they've shared.
+        Always set action to "done".
+        """,
+        }
+
+        return state_prompts.get(state, "")
+
     
-    async def get_response(self, user_input: str) -> str:
+    def _update_context_from_response(
+        self, context: ConversationContext, response: InterviewMessage
+    ) -> None:
+        """Update the conversation context based on the collected information"""
+        if response.collected_info:
+            context.update(response.collected_info)
+
+        # Progress the state based on collected information
+        next_state = context.get_next_state()
+        if next_state != context.state:
+            logger.info(f"Advancing state: {context.state} -> {next_state}")
+            context.state = next_state
+
+    async def get_response(self, db: AsyncSession, phone_number: str, user_input: str) -> str:
+        """Get a conversational response from Claude with database persistence"""
         try:
+            # Get or create user in database
+            user = await self.user_repo.get_or_create(db, phone_number)
+            
+            # Load context from database
+            context = await self.conversation_repo.load_context(
+                db=db,
+                user_id=user.id,
+                phone_number=phone_number
+            )
+            
+            # Save user message to database
+            await self.conversation_repo.add_user_message(
+                db=db,
+                user_id=user.id,
+                content=user_input
+            )
+            
+            # Get message history from database
+            message_history = await self.conversation_repo.get_message_history(
+                db=db,
+                user_id=user.id,
+                limit=50
+            )
+            
+            # Add current message to history
+            message_history.append({
+                "role": "user",
+                "content": user_input
+            })
+            
+            language = self._detect_language(user_input)
+
+            # Build system prompt
+            full_system_prompt = (
+                self.base_system_prompt + 
+                self._get_state_specific_prompt(context.state)
+            )
+            
+            context_section = f"""
+    CURRENT CONVERSATION STATE: {context.state}
+
+    INFORMATION COLLECTED SO FAR:
+    - Skin Profile: {context.skin_profile.model_dump_json()}
+    - Health Info: {context.health_info.model_dump_json()}
+    - Current Routine: {context.routine.model_dump_json()}
+    - Preferences: {context.preferences.model_dump_json()}
+
+    Based on the current state and information collected, ask the appropriate question to gather missing information.
+    In your response, include ALL new information you collect in the collected_info field.
+    """
+            full_system_prompt += context_section
+            
+            # Get response from Claude
             response = await self.client.messages.create(
                 model=self.MODEL,
-                messages=[{
-                    "role": "user",
-                    "content": user_input
+                max_tokens=1024,
+                messages=message_history,
+                tools=[{
+                    "name": "output",
+                    "input_schema": InterviewMessage.model_json_schema(),
                 }],
-                system=self.system_prompt,
-                max_tokens=1000
+                tool_choice={"name": "output", "type": "tool"},
+                system=full_system_prompt,
             )
-            assert len(response.content) > 0
-            assert response.content[0].type == "text"
-
-            return response.content[0].text
+            
+            # Process the structured response
+            assert response.content[0].type == "tool_use"
+            assistant_message = response.content[0].input
+            resp = InterviewMessage.model_validate(assistant_message)
+            
+            # Update the conversation context
+            self._update_context_from_response(context, resp)
+            
+            # Save assistant message to database
+            await self.conversation_repo.add_assistant_message(
+                db=db,
+                user_id=user.id,
+                content=resp.message
+            )
+            
+            # Save updated context to database
+            await self.conversation_repo.save_context(
+                db=db,
+                user_id=user.id,
+                context=context
+            )
+            
+            # Log state transition
+            logger.info(
+                f"User: {phone_number} (ID: {user.id}) | "
+                f"State: {context.state} | "
+                f"Action: {resp.action}"
+            )
+            
+            return resp.message
+        
         except Exception as e:
-            logger.error(f"Error getting response: {str(e)}")
+            logger.error(f"Error getting response: {str(e)}", exc_info=True)
             return "I apologize, but I'm having trouble responding. Could you try again?"
+
+    async def analyze_skin_image(self, image_url: str, user_context: ConversationContext = None) -> dict:
+        """Analyze skin condition from image using Claude's vision"""
+        try:
+            # Build the analysis prompt
+            analysis_prompt = """
+            Analyze this skin image and provide:
+            1. Skin type assessment (dry/oily/combination/normal)
+            2. Visible concerns (acne, hyperpigmentation, texture issues, etc.)
+            3. Overall skin condition
+            4. Recommendations for what to focus on
+            
+            Be professional, encouraging, and specific. Format your response clearly.
+            """
+            
+            # If we have user context, personalize the analysis
+            if user_context:
+                analysis_prompt += f"""
+                
+                Additional context about this user:
+                - They mentioned concerns about: {', '.join(user_context.skin_profile.concerns) if user_context.skin_profile.concerns else 'none specified'}
+                - Current skin type assessment: {user_context.skin_profile.skin_type or 'not yet determined'}
+                """
+            
+            # Call Claude with image
+            response = await self.client.messages.create(
+                model=self.MODEL,
+                max_tokens=1024,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "url",
+                                    "url": image_url,
+                                },
+                            },
+                            {
+                                "type": "text",
+                                "text": analysis_prompt
+                            }
+                        ],
+                    }
+                ],
+            )
+            
+            # Extract the analysis
+            assert response.content[0].type == "text"
+            analysis_text = response.content[0].text
+            
+            return {
+                "success": True,
+                "analysis": analysis_text,
+                "image_url": image_url
+            }
+            
+        except Exception as e:
+            logger.error(f"Error analyzing skin image: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    async def get_recommendations(self, user_profile: dict) -> str:
+        """Get skincare recommendations based on user profile"""
+
+        # TODO: Implement recommendation logic
+
+
+        return "Skincare recommendations"

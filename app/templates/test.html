@@ -1,0 +1,38 @@
+<!-- app/templates/test.html -->
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Template Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 40px;
+            background: #f0f0f0;
+        }
+
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #667eea;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <h1>✅ Template Working!</h1>
+        <p>Hello <strong>{{ name }}</strong>!</p>
+        <p>Count: <strong>{{ count }}</strong></p>
+        <p>If you see this, Jinja2 templates are working correctly!</p>
+        <a href="/dashboard">← Back to Dashboard</a>
+    </div>
+</body>
+
+</html>
