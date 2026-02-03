@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>GlowBot Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            flex: 1;
+            text-align: center;
+        }
+
+        .stat-card h3 {
+            font-size: 2.5em;
+            margin-bottom: 5px;
+        }
+
+        .stat-card p {
+            opacity: 0.9;
+        }
+
+        .conversations {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .conversations h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .conversation-card {
+            border: 2px solid #e0e0e0;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .conversation-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .user-id {
+            font-weight: bold;
+            color: #667eea;
+            font-size: 1.2em;
+            margin-bottom: 10px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            margin-right: 8px;
+            margin-top: 5px;
+        }
+
+        .badge-state {
+            background: #667eea;
+            color: white;
+        }
+
+        .badge-language {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .badge-skin {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .badge-concern {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .empty-state h2 {
+            margin-bottom: 10px;
+            color: #666;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌟 GlowBot Dashboard</h1>
+            <p>Monitor your skincare consultations</p>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <h3>{{ total_users }}</h3>
+                    <p>Total Conversations</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="conversations">
+            <h2>Active Conversations</h2>
+
+            {% if conversations %}
+            {% for conv in conversations %}
+            <div class="conversation-card" onclick="window.location.href='/dashboard/user/{{ conv.user_id }}'">
+                <div class="user-id">👤 {{ conv.user_id }}</div>
+
+                <div>
+                    <span class="badge badge-state">{{ conv.state }}</span>
+                    <span class="badge badge-language">{{ conv.language|upper }}</span>
+
+                    {% if conv.skin_type != "Unknown" %}
+                    <span class="badge badge-skin">{{ conv.skin_type }}</span>
+                    {% endif %}
+
+                    {% for concern in conv.concerns %}
+                    <span class="badge badge-concern">{{ concern }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="empty-state">
+                <h2>No conversations yet</h2>
+                <p>Start chatting with GlowBot on WhatsApp to see conversations here!</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+
+</html>
