@@ -1,10 +1,10 @@
 import json
 import logging
-from typing import Any, Dict, List
-
+from typing import Any, Dict, List, Optional
 from anthropic import AsyncAnthropic
 from anthropic.types import MessageParam
-
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.repositories import get_conversation_repository, get_user_repository
 from app.config import Settings
 from app.models.conversation_schemas import (
     ConversationContext,
@@ -21,10 +21,9 @@ class ClaudeService:
 
     def __init__(self, settings: Settings):
         self.client = AsyncAnthropic(api_key=settings.claude_api_key)
-        self.history = []
-
+        self.conversation_repo = get_conversation_repository()
+        self.user_repo = get_user_repository()
         self.MODEL = "claude-sonnet-4-5-20250929"
-        self.user_contexts = {}  # Store contexts for multiple users
         self.base_system_prompt = """You are Glowbot, a smart skincare assistant who helps users create personalized skincare routines. 
             Interview users naturally, asking one question at a time while maintaining a friendly, conversational tone. 
             Focus on gathering essential information: age, skin type, current concerns, health considerations (pregnancy, medications, allergies), and current skincare routine.
@@ -36,8 +35,15 @@ class ClaudeService:
             When making recommendations, structure them into morning and evening routines with clear usage instructions. 
             Include basic safety information like patch testing and potential product interactions. 
             Keep responses brief but informative, and don't hesitate to ask clarifying questions when needed to ensure proper recommendations.
+            Always match the user's language exactly and do not switch languages unless the user does.
             """
-
+    def _detect_language(self, text: str) -> str:
+        # Hebrew Unicode range
+        for char in text:
+            if "\u0590" <= char <= "\u05FF":
+                return "hebrew"
+        return "english"
+        
     def _get_state_specific_prompt(self, state: ConversationState) -> str:
         """Get additional prompt instructions based on the current state"""
 
@@ -137,12 +143,7 @@ class ClaudeService:
 
         return state_prompts.get(state, "")
 
-    def _get_or_create_context(self, user_id: str) -> ConversationContext:
-        """Get an existing context or create a new one for a user"""
-        if user_id not in self.user_contexts:
-            self.user_contexts[user_id] = ConversationContext(user_id=user_id)
-        return self.user_contexts[user_id]
-
+    
     def _update_context_from_response(
         self, context: ConversationContext, response: InterviewMessage
     ) -> None:
@@ -156,91 +157,177 @@ class ClaudeService:
             logger.info(f"Advancing state: {context.state} -> {next_state}")
             context.state = next_state
 
-    async def get_response(self, user_id: str, user_input: str) -> str:
-        """Get a conversational response from Claude with state tracking"""
+    async def get_response(self, db: AsyncSession, phone_number: str, user_input: str) -> str:
+        """Get a conversational response from Claude with database persistence"""
         try:
-            # Get or create context for this user
-            context = self._get_or_create_context(user_id)
-
-            # Add user message to history
-            if not hasattr(self, "_message_history"):
-                self._message_history = {}
-
-            if user_id not in self._message_history:
-                self._message_history[user_id] = []
-
-            self._message_history[user_id].append(
-                {"role": "user", "content": user_input}
+            # Get or create user in database
+            user = await self.user_repo.get_or_create(db, phone_number)
+            
+            # Load context from database
+            context = await self.conversation_repo.load_context(
+                db=db,
+                user_id=user.id,
+                phone_number=phone_number
             )
+            
+            # Save user message to database
+            await self.conversation_repo.add_user_message(
+                db=db,
+                user_id=user.id,
+                content=user_input
+            )
+            
+            # Get message history from database
+            message_history = await self.conversation_repo.get_message_history(
+                db=db,
+                user_id=user.id,
+                limit=50
+            )
+            
+            # Add current message to history
+            message_history.append({
+                "role": "user",
+                "content": user_input
+            })
+            
+            language = self._detect_language(user_input)
 
-            # Combine base system prompt with state-specific instructions
+            # Build system prompt
             full_system_prompt = (
-                self.base_system_prompt + self._get_state_specific_prompt(context.state)
+                self.base_system_prompt + 
+                self._get_state_specific_prompt(context.state)
             )
-
-            # Add context information to the prompt
+            
             context_section = f"""
-        CURRENT CONVERSATION STATE: {context.state}
+    CURRENT CONVERSATION STATE: {context.state}
 
-        INFORMATION COLLECTED SO FAR:
-        - Skin Profile: {context.skin_profile.model_dump_json()}
-        - Health Info: {context.health_info.model_dump_json()}
-        - Current Routine: {context.routine.model_dump_json()}
-        - Preferences: {context.preferences.model_dump_json()}
+    INFORMATION COLLECTED SO FAR:
+    - Skin Profile: {context.skin_profile.model_dump_json()}
+    - Health Info: {context.health_info.model_dump_json()}
+    - Current Routine: {context.routine.model_dump_json()}
+    - Preferences: {context.preferences.model_dump_json()}
 
-        Based on the current state and information collected, ask the appropriate question to gather missing information.
-        In your response, include ALL new information you collect in the collected_info field.
-        """
-
+    Based on the current state and information collected, ask the appropriate question to gather missing information.
+    In your response, include ALL new information you collect in the collected_info field.
+    """
             full_system_prompt += context_section
-
+            
             # Get response from Claude
             response = await self.client.messages.create(
                 model=self.MODEL,
                 max_tokens=1024,
-                messages=self._message_history[user_id],
-                tools=[
-                    {
-                        "name": "output",
-                        "input_schema": InterviewMessage.model_json_schema(),
-                    }
-                ],
+                messages=message_history,
+                tools=[{
+                    "name": "output",
+                    "input_schema": InterviewMessage.model_json_schema(),
+                }],
                 tool_choice={"name": "output", "type": "tool"},
                 system=full_system_prompt,
             )
-
+            
             # Process the structured response
             assert response.content[0].type == "tool_use"
             assistant_message = response.content[0].input
             resp = InterviewMessage.model_validate(assistant_message)
-
-            # Update the conversation context with newly collected information
+            
+            # Update the conversation context
             self._update_context_from_response(context, resp)
-
-            # Add assistant message to history
-            self._message_history[user_id].append(
-                {"role": "assistant", "content": resp.message}
+            
+            # Save assistant message to database
+            await self.conversation_repo.add_assistant_message(
+                db=db,
+                user_id=user.id,
+                content=resp.message
             )
-
+            
+            # Save updated context to database
+            await self.conversation_repo.save_context(
+                db=db,
+                user_id=user.id,
+                context=context
+            )
+            
             # Log state transition
             logger.info(
-                f"User: {user_id} | State: {context.state} | Action: {resp.action}"
+                f"User: {phone_number} (ID: {user.id}) | "
+                f"State: {context.state} | "
+                f"Action: {resp.action}"
             )
-
+            
             return resp.message
-
+        
         except Exception as e:
-            logger.error(f"Error getting response: {str(e)}")
-            return (
-                "I apologize, but I'm having trouble responding. Could you try again?"
-            )
+            logger.error(f"Error getting response: {str(e)}", exc_info=True)
+            return "I apologize, but I'm having trouble responding. Could you try again?"
 
-    async def analyze_skin(self, image_url: str) -> str:
-        """Analyze skin condition from image"""
-        # TODO: Implement image analysis using Claude
-        return "Skin analysis result"
+    async def analyze_skin_image(self, image_url: str, user_context: ConversationContext = None) -> dict:
+        """Analyze skin condition from image using Claude's vision"""
+        try:
+            # Build the analysis prompt
+            analysis_prompt = """
+            Analyze this skin image and provide:
+            1. Skin type assessment (dry/oily/combination/normal)
+            2. Visible concerns (acne, hyperpigmentation, texture issues, etc.)
+            3. Overall skin condition
+            4. Recommendations for what to focus on
+            
+            Be professional, encouraging, and specific. Format your response clearly.
+            """
+            
+            # If we have user context, personalize the analysis
+            if user_context:
+                analysis_prompt += f"""
+                
+                Additional context about this user:
+                - They mentioned concerns about: {', '.join(user_context.skin_profile.concerns) if user_context.skin_profile.concerns else 'none specified'}
+                - Current skin type assessment: {user_context.skin_profile.skin_type or 'not yet determined'}
+                """
+            
+            # Call Claude with image
+            response = await self.client.messages.create(
+                model=self.MODEL,
+                max_tokens=1024,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "url",
+                                    "url": image_url,
+                                },
+                            },
+                            {
+                                "type": "text",
+                                "text": analysis_prompt
+                            }
+                        ],
+                    }
+                ],
+            )
+            
+            # Extract the analysis
+            assert response.content[0].type == "text"
+            analysis_text = response.content[0].text
+            
+            return {
+                "success": True,
+                "analysis": analysis_text,
+                "image_url": image_url
+            }
+            
+        except Exception as e:
+            logger.error(f"Error analyzing skin image: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
 
     async def get_recommendations(self, user_profile: dict) -> str:
         """Get skincare recommendations based on user profile"""
+
         # TODO: Implement recommendation logic
+
+
         return "Skincare recommendations"
