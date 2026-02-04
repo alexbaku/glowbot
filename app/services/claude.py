@@ -6,6 +6,7 @@ from anthropic.types import MessageParam
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories import get_conversation_repository, get_user_repository
 from app.config import Settings
+from app.services.recommendation import RecommendationEngine
 from app.models.conversation_schemas import (
     ConversationContext,
     ConversationState,
@@ -37,6 +38,9 @@ class ClaudeService:
             Keep responses brief but informative, and don't hesitate to ask clarifying questions when needed to ensure proper recommendations.
             Always match the user's language exactly and do not switch languages unless the user does.
             """
+        self.recommendation_engine = RecommendationEngine()
+        logger.info("Recommendation engine initialized")    
+
     def _detect_language(self, text: str) -> str:
         # Hebrew Unicode range
         for char in text:
@@ -170,6 +174,23 @@ class ClaudeService:
                 phone_number=phone_number
             )
             
+            # Check if conversation is complete - generate recommendations
+            if context.state == ConversationState.COMPLETE:
+                logger.info(f"Conversation complete for {phone_number}, generating recommendations")
+
+                # Generate recommendations
+                recommendations = await self.get_recommendations(context)
+            
+                # Save recommendations to database
+                await self.conversation_repo.add_assistant_message(
+                db=db,
+                user_id=user.id,
+                content=recommendations
+            )
+            
+                logger.info(f"Recommendations sent to {phone_number}")
+                return recommendations
+
             # Save user message to database
             await self.conversation_repo.add_user_message(
                 db=db,
@@ -191,6 +212,7 @@ class ClaudeService:
             })
             
             language = self._detect_language(user_input)
+            context.language = language
 
             # Build system prompt
             full_system_prompt = (
@@ -324,10 +346,24 @@ class ClaudeService:
                 "error": str(e)
             }
 
-    async def get_recommendations(self, user_profile: dict) -> str:
-        """Get skincare recommendations based on user profile"""
-
-        # TODO: Implement recommendation logic
-
-
-        return "Skincare recommendations"
+    async def get_recommendations(self, context: ConversationContext) -> str:
+        """
+        Generate skincare recommendations based on user profile
+        
+        Args:
+            context: Complete conversation context with all user data
+            
+        Returns:
+            Formatted recommendation message ready for WhatsApp
+        """
+        try:
+            logger.info(f"Generating recommendations for user {context.user_id}")
+            recommendations = self.recommendation_engine.generate_routine(context)  # ← Uses correct variable
+            logger.info(f"Recommendations generated successfully")
+            return recommendations
+        except Exception as e:
+            logger.error(f"Error generating recommendations: {e}", exc_info=True)
+            # Return error message in user's language
+            if context.language == "he":
+                return "מצטערת, נתקלתי בבעיה ביצירת ההמלצות. אנא נסי שוב."
+            return "Sorry, I encountered an issue generating your recommendations. Please try again."
