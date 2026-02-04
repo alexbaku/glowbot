@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.crud import conversation_crud, user_crud
+from app.crudgit  import conversation_crud, user_crud
 from app.database import close_db, get_db, init_db
 from app.models.conversation import MessageRole
 from app.services.claude import ClaudeService
