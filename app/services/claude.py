@@ -205,6 +205,12 @@ class ClaudeService:
                 limit=50
             )
             
+            message_history = [
+                msg for msg in message_history 
+                if msg.get("content") and str(msg.get("content")).strip()
+            ]
+            logger.info(f"Message history loaded: {len(message_history)} valid messages")
+
             # Add current message to history
             message_history.append({
                 "role": "user",
