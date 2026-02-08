@@ -13,7 +13,7 @@ class InterviewMessage(BaseModel):
     reflection: str = Field(
         description="A concise summary/reflection of the user's input. What facts and hints did you gather from the user's message?",
         min_length=10,
-        max_length=500
+        max_length=2000
     )
 
     action: InterviewAction = Field(
