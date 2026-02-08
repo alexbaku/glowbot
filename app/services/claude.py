@@ -28,7 +28,12 @@ class ClaudeService:
         self.base_system_prompt = """You are Glowbot, a smart skincare assistant who helps users create personalized skincare routines. 
             Interview users naturally, asking one question at a time while maintaining a friendly, conversational tone. 
             Focus on gathering essential information: age, skin type, current concerns, health considerations (pregnancy, medications, allergies), and current skincare routine.
-
+            CRITICAL RESPONSE REQUIREMENTS:
+            - You MUST ALWAYS provide ALL required fields in your response
+            - The "message" field is MANDATORY - this is what the user will see
+            - The "reflection" field is MANDATORY - summarize what you learned
+            - The "action" field is MANDATORY - specify next action (ask/followup/done)
+            - The "collected_info" field should contain any new data you gathered
             Be concise in your responses, remembering this is a chat conversation. 
             Progress through information gathering logically - start with basic skin information, then health safety checks, current routine assessment, and finally provide personalized recommendations. 
             Don't move to recommendations until you have all necessary information. If users mention severe skin conditions, always recommend consulting a dermatologist.
@@ -247,6 +252,7 @@ class ClaudeService:
                 messages=message_history,
                 tools=[{
                     "name": "output",
+                    "description": "REQUIRED: Provide structured response with ALL fields: reflection, action, message, collected_info",
                     "input_schema": InterviewMessage.model_json_schema(),
                 }],
                 tool_choice={"name": "output", "type": "tool"},
@@ -256,8 +262,13 @@ class ClaudeService:
             # Process the structured response
             assert response.content[0].type == "tool_use"
             assistant_message = response.content[0].input
+            logger.info(f"Raw Claude response keys: {assistant_message.keys()}")
+            if "message" not in assistant_message:
+                logger.error(f"Missing 'message' field! Keys: {assistant_message.keys()}")
+                assistant_message["message"] = "I understand. Could you tell me more?"
+
             resp = InterviewMessage.model_validate(assistant_message)
-            
+
             # Update the conversation context
             self._update_context_from_response(context, resp)
             
