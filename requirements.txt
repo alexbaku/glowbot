@@ -1,23 +1,13 @@
-# Core FastAPI
 fastapi==0.115.6
 uvicorn==0.34.0
 python-multipart==0.0.20
-
-# AI & Communication
 anthropic==0.42.0
 twilio==9.3.0
-
-# Data validation
 pydantic==2.10.4
 pydantic-settings==2.7.1
-
-# Database (will work on Python 3.12)
 sqlalchemy[asyncio]==2.0.25
 alembic==1.13.1
 asyncpg==0.29.0
-
-# Templates
+psycopg2-binary==2.9.9
 jinja2==3.1.4
-
-# Environment
 python-dotenv==1.0.1
