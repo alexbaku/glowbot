@@ -288,8 +288,36 @@ class ClaudeService:
             if "collected_info" not in assistant_message:
                 logger.warning("Missing 'collected_info' field - using empty dict")
                 assistant_message["collected_info"] = {}
-                
+
             resp = InterviewMessage.model_validate(assistant_message)
+            user_input_lower = user_input.lower()
+            wants_recommendations = any(word in user_input_lower for word in [
+                'recommend', 'routine', 'products', 'suggest', 'go ahead', 'yes', 'sure', 'ok', 'ready',
+                'המלצ', 'שגרת', 'מוצר', 'כן', 'בטח'
+            ])
+
+            has_enough_data = (
+                context.skin_profile.skin_type is not None or 
+                len(context.skin_profile.concerns) > 0
+            )
+
+            # Should we generate recommendations?
+            should_generate = (
+                (resp.action == InterviewAction.DONE and wants_recommendations) or
+                (context.state == ConversationState.SUMMARY and wants_recommendations) or
+                (wants_recommendations and has_enough_data)
+            )
+
+            if should_generate:
+                logger.info("🎯 Generating personalized recommendations...")
+                try:
+                    recommendations = await self.get_recommendations(context)
+                    resp.message = recommendations
+                    context.state = ConversationState.COMPLETE
+                    logger.info("✅ Recommendations sent!")
+                except Exception as e:
+                    logger.error(f"❌ Failed: {e}", exc_info=True)
+                    resp.message = "מצטערת! תגידי לי מה את צריכה?" if context.language == "hebrew" else "What do you need?"
 
             # Update the conversation context
             self._update_context_from_response(context, resp)
