@@ -34,6 +34,25 @@ class ClaudeService:
             - The "reflection" field is MANDATORY - summarize what you learned
             - The "action" field is MANDATORY - specify next action (ask/followup/done)
             - The "collected_info" field should contain any new data you gathered
+            CORRECT RESPONSE FORMAT EXAMPLES:
+
+            Example 1:
+            {
+            "reflection": "User has dry skin",
+            "action": "ask",
+            "message": "Thanks! What are your main skin concerns?",
+            "collected_info": {"skin_profile": {"skin_type": "dry"}}
+            }
+
+            Example 2:
+            {
+            "reflection": "User confirmed no pregnancy",
+            "action": "ask",
+            "message": "Great! Tell me about your current routine.",
+            "collected_info": {"health_info": {"is_pregnant": false}}
+            }
+
+            NEVER omit the "message" field - that's what the user sees!
             Be concise in your responses, remembering this is a chat conversation. 
             Progress through information gathering logically - start with basic skin information, then health safety checks, current routine assessment, and finally provide personalized recommendations. 
             Don't move to recommendations until you have all necessary information. If users mention severe skin conditions, always recommend consulting a dermatologist.
@@ -232,17 +251,17 @@ class ClaudeService:
             )
             
             context_section = f"""
-    CURRENT CONVERSATION STATE: {context.state}
+        CURRENT CONVERSATION STATE: {context.state}
 
-    INFORMATION COLLECTED SO FAR:
-    - Skin Profile: {context.skin_profile.model_dump_json()}
-    - Health Info: {context.health_info.model_dump_json()}
-    - Current Routine: {context.routine.model_dump_json()}
-    - Preferences: {context.preferences.model_dump_json()}
+        INFORMATION COLLECTED SO FAR:
+        - Skin Profile: {context.skin_profile.model_dump_json()}
+        - Health Info: {context.health_info.model_dump_json()}
+        - Current Routine: {context.routine.model_dump_json()}
+        - Preferences: {context.preferences.model_dump_json()}
 
-    Based on the current state and information collected, ask the appropriate question to gather missing information.
-    In your response, include ALL new information you collect in the collected_info field.
-    """
+        Based on the current state and information collected, ask the appropriate question to gather missing information.
+        In your response, include ALL new information you collect in the collected_info field.
+        """
             full_system_prompt += context_section
             
             # Get response from Claude
@@ -266,7 +285,10 @@ class ClaudeService:
             if "message" not in assistant_message:
                 logger.error(f"Missing 'message' field! Keys: {assistant_message.keys()}")
                 assistant_message["message"] = "I understand. Could you tell me more?"
-
+            if "collected_info" not in assistant_message:
+                logger.warning("Missing 'collected_info' field - using empty dict")
+                assistant_message["collected_info"] = {}
+                
             resp = InterviewMessage.model_validate(assistant_message)
 
             # Update the conversation context
