@@ -182,20 +182,148 @@ class RecommendationEngine:
             logger.info(f"Profile: {context.skin_profile.skin_type}, Concerns: {context.skin_profile.concerns}")
             logger.info(f"Pregnant: {context.health_info.is_pregnant}, Nursing: {context.health_info.is_nursing}")
             
-            # Build routines
-            morning = self._build_morning_routine(context)
-            evening = self._build_evening_routine(context)
-            instructions = self._get_usage_instructions(context)
+            # Check if user has shared their current routine
+            has_current_routine = bool(
+                context.routine.morning or 
+                context.routine.evening or 
+                context.routine.products
+            )
             
-            # Format for WhatsApp
-            message = self._format_message(morning, evening, instructions, context.language)
-            
-            logger.info(f"Routine generated successfully for user {context.user_id}")
-            return message
-            
+            if has_current_routine:
+                # User already has a routine - give targeted advice
+                logger.info("User has existing routine - generating targeted recommendations")
+                return self._generate_targeted_recommendations(context)
+            else:
+                # User needs a full routine from scratch
+                logger.info("User needs full routine - generating complete recommendations")
+                return self._generate_full_routine(context)
+                
         except Exception as e:
             logger.error(f"Error generating routine: {e}", exc_info=True)
             return self._get_error_message(context.language)
+    
+    def _generate_targeted_recommendations(self, context: ConversationContext) -> str:
+        """
+        Generate concise, targeted advice for users with existing routines
+        """
+        language = context.language
+        
+        # Start with acknowledgment
+        if language in ["he", "hebrew"]:
+            msg = "💚 *שגרה מצוינת שיש לך!*\n\n"
+            msg += "הנה כמה המלצות ממוקדות:\n\n"
+        else:
+            msg = "💚 *Great routine you have there!*\n\n"
+            msg += "Here are my targeted recommendations:\n\n"
+        
+        # Analyze their concerns and give 2-3 specific suggestions
+        suggestions = self._get_smart_suggestions(context)
+        
+        for i, suggestion in enumerate(suggestions[:3], 1):
+            msg += f"{i}. {suggestion}\n\n"
+        
+        # Add SPF reminder if relevant
+        if context.skin_profile.sun_exposure:
+            spf_info = self.spf_rules.get(context.skin_profile.sun_exposure.lower())
+            if spf_info and language not in ["he", "hebrew"]:
+                msg += f"☀️ *SPF Reminder:* {spf_info['notes']}\n\n"
+            elif spf_info:
+                msg += f"☀️ *תזכורת הגנה:* SPF 50 חובה! יש למרוח מחדש כל 4 שעות.\n\n"
+        
+        # Add safety notes if needed
+        if context.health_info.is_pregnant:
+            if language in ["he", "hebrew"]:
+                msg += "🤰 *הריון:* הימנעי מרטינול, חומצות בריכוז גבוה והידרוקינון.\n\n"
+            else:
+                msg += "🤰 *Pregnancy:* Avoid retinol, high-concentration acids, and hydroquinone.\n\n"
+        
+        # Closing
+        if language in ["he", "hebrew"]:
+            msg += "💬 יש שאלות נוספות? אני כאן!"
+        else:
+            msg += "💬 Have more questions? I'm here to help!"
+        
+        logger.info(f"Generated targeted recommendations: {len(msg)} characters")
+        return msg
+
+    def _get_smart_suggestions(self, context: ConversationContext) -> List[str]:
+        """
+        Generate smart, specific suggestions based on concerns and existing routine
+        """
+        suggestions = []
+        language = context.language
+        
+        # Get top concerns
+        concerns = [c.lower() for c in context.skin_profile.concerns] if context.skin_profile.concerns else []
+        
+        # Generate suggestions based on concerns
+        for concern in concerns[:3]:  # Top 3 concerns max
+            if concern in ['hyperpigmentation', 'dark spots', 'melasma', 'pigmentation']:
+                if language in ["he", "hebrew"]:
+                    suggestions.append("✨ *להבהרת פיגמנטציה:* הוסיפי ויטמין C בבוקר + ניאצינמייד בערב")
+                else:
+                    suggestions.append("✨ *For brightening:* Add Vitamin C (AM) + Niacinamide (PM) for best results")
+                    
+            elif concern in ['aging', 'wrinkles', 'fine lines', 'anti-aging', 'anti aging']:
+                if language in ["he", "hebrew"]:
+                    suggestions.append("🌙 *נגד קמטים:* רטינול 2-3 פעמים בשבוע בערב (התחילי מאחוז נמוך)")
+                else:
+                    suggestions.append("🌙 *Anti-aging:* Start retinol 2-3x/week in PM (begin with low concentration)")
+                    
+            elif concern in ['acne', 'breakouts', 'pimples']:
+                if language in ["he", "hebrew"]:
+                    suggestions.append("🎯 *לאקנה:* ניאצינמייד + חומצה סליצילית (BHA) 2-3 פעמים בשבוע")
+                else:
+                    suggestions.append("🎯 *For acne:* Niacinamide + Salicylic acid (BHA) 2-3x/week")
+                    
+            elif concern in ['dryness', 'dry skin', 'dehydration']:
+                if language in ["he", "hebrew"]:
+                    suggestions.append("💧 *לחות:* חומצה היאלורונית על עור לח + סרום שמן בערב")
+                else:
+                    suggestions.append("💧 *Hydration boost:* Hyaluronic acid on damp skin + facial oil at night")
+                    
+            elif concern in ['texture', 'rough texture', 'bumpy', 'uneven texture']:
+                if language in ["he", "hebrew"]:
+                    suggestions.append("✨ *לטקסטורה:* פילינג עדין עם AHA/PHA 2-3 פעמים בשבוע")
+                else:
+                    suggestions.append("✨ *Smooth texture:* Gentle chemical exfoliant (AHA/PHA) 2-3x/week")
+                    
+            elif concern in ['pores', 'enlarged pores', 'large pores']:
+                if language in ["he", "hebrew"]:
+                    suggestions.append("🎯 *לנקבוביות:* ניאצינמייד יומי + רטינול בהדרגה")
+                else:
+                    suggestions.append("🎯 *Minimize pores:* Daily niacinamide + gradual retinol introduction")
+        
+        # If no specific suggestions, give general advice
+        if not suggestions:
+            if language in ["he", "hebrew"]:
+                suggestions.append("💚 *המשיכי כך!* השגרה שלך נראית טוב. תני לה 4-6 שבועות לעבוד.")
+            else:
+                suggestions.append("💚 *Keep it up!* Your routine looks solid. Give it 4-6 weeks to show results.")
+        
+        # Add hydration tip if not already mentioned
+        if 'dryness' not in ' '.join(concerns) and len(suggestions) < 3:
+            if language in ["he", "hebrew"]:
+                suggestions.append("💧 *טיפ נוסף:* שתי הרבה מים והשתמשי במכשיר אדים בחדר השינה")
+            else:
+                suggestions.append("💧 *Extra tip:* Stay hydrated and consider a bedroom humidifier")
+        
+        return suggestions
+    
+    def _generate_full_routine(self, context: ConversationContext) -> str:
+        """
+        Generate full routine for users without existing routines
+        """
+        # Build routines
+        morning = self._build_morning_routine(context)
+        evening = self._build_evening_routine(context)
+        instructions = self._get_usage_instructions(context)
+        
+        # Format for WhatsApp
+        message = self._format_message(morning, evening, instructions, context.language)
+        
+        logger.info(f"Full routine generated successfully for user {context.user_id}")
+        return message
     
     def _build_morning_routine(self, context: ConversationContext) -> Dict:
         """Build morning skincare routine"""
@@ -652,9 +780,3 @@ class RecommendationEngine:
             "Sorry, I encountered an issue generating your recommendations. 😔\n\n"
             "Please try again or reach out with any questions!"
         )
-
-
-
-
-
-
