@@ -1,804 +1,1209 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple, Set
+from dataclasses import dataclass, field
+from enum import Enum
 from app.models.conversation_schemas import ConversationContext
 import logging
 
 logger = logging.getLogger(__name__)
 
 
+class DataGap(Enum):
+    """Types of missing data that need follow-up"""
+    SKIN_TYPE_AMBIGUOUS = "skin_type_ambiguous"
+    CONCERN_PRIORITY_UNCLEAR = "concern_priority_unclear"
+    LIFESTYLE_CONTEXT_MISSING = "lifestyle_context_missing"
+    SENSITIVITY_RISK = "sensitivity_risk"
+    CURRENT_ROUTINE_INCOMPLETE = "current_routine_incomplete"
+    BUDGET_UNDEFINED = "budget_undefined"
+    USAGE_PREFERENCE_UNCLEAR = "usage_preference_unclear"
+    CONFLICTING_INFORMATION = "conflicting_information"
+
+
+@dataclass
+class ReasoningState:
+    """Internal reasoning state - not shown to user"""
+    known_facts: List[str] = field(default_factory=list)
+    missing_critical: List[DataGap] = field(default_factory=list)
+    contradictions: List[str] = field(default_factory=list)
+    safety_flags: List[str] = field(default_factory=list)
+    priority_concerns: List[str] = field(default_factory=list)
+    confidence_level: str = "low"  # low, medium, high
+    
+    def is_ready_for_recommendation(self) -> bool:
+        """Determine if we have enough data to recommend"""
+        # Must have high confidence and no critical gaps or safety flags
+        return (
+            self.confidence_level == "high" and 
+            len(self.missing_critical) == 0 and
+            len(self.safety_flags) == 0
+        )
+    
+    def get_next_question_priority(self) -> Optional[DataGap]:
+        """Get the highest priority data gap to address next"""
+        # Safety first
+        if self.safety_flags:
+            return DataGap.SENSITIVITY_RISK
+        
+        # Then critical gaps
+        if self.missing_critical:
+            return self.missing_critical[0]
+        
+        return None
+
+
+@dataclass  
+class UserSnapshot:
+    """Mid-conversation summary of user state"""
+    primary_goals: List[str]
+    secondary_goals: List[str]
+    current_routine: Dict[str, List[str]]
+    skin_context: Dict[str, str]
+    preferences: Dict[str, str]
+    restrictions: List[str]
+    key_gaps: List[str]
+    
+    def to_confirmation_message(self, language: str = "english") -> str:
+        """Generate confirmation message for user"""
+        if language == "hebrew":
+            return self._format_hebrew()
+        return self._format_english()
+    
+    def _format_english(self) -> str:
+        msg = "📋 *Let me confirm what I've learned about your skin:*\n\n"
+        
+        if self.primary_goals:
+            msg += "🎯 *Primary goals:*\n"
+            for goal in self.primary_goals:
+                msg += f"  • {goal}\n"
+            msg += "\n"
+        
+        if self.secondary_goals:
+            msg += "🎯 *Also working on:*\n"
+            for goal in self.secondary_goals:
+                msg += f"  • {goal}\n"
+            msg += "\n"
+        
+        if self.skin_context:
+            msg += "👤 *Your skin:*\n"
+            for key, value in self.skin_context.items():
+                msg += f"  • {key.replace('_', ' ').title()}: {value}\n"
+            msg += "\n"
+        
+        if self.current_routine:
+            msg += "🧴 *Current routine:*\n"
+            for time, products in self.current_routine.items():
+                if products:
+                    msg += f"  {time}: {', '.join(products)}\n"
+            msg += "\n"
+        
+        if self.preferences:
+            msg += "✨ *Preferences:*\n"
+            for key, value in self.preferences.items():
+                msg += f"  • {key.replace('_', ' ').title()}: {value}\n"
+            msg += "\n"
+        
+        if self.restrictions:
+            msg += "⚠️ *Important restrictions:*\n"
+            for restriction in self.restrictions:
+                msg += f"  • {restriction}\n"
+            msg += "\n"
+        
+        if self.key_gaps:
+            msg += "❓ *Still need to clarify:*\n"
+            for gap in self.key_gaps:
+                msg += f"  • {gap}\n"
+            msg += "\n"
+        
+        msg += "_Is this accurate? Any corrections before I create your routine?_"
+        return msg
+    
+    def _format_hebrew(self) -> str:
+        msg = "📋 *בואי נוודא שהבנתי נכון:*\n\n"
+        
+        if self.primary_goals:
+            msg += "🎯 *מטרות עיקריות:*\n"
+            for goal in self.primary_goals:
+                msg += f"  • {goal}\n"
+            msg += "\n"
+        
+        if self.secondary_goals:
+            msg += "🎯 *גם עובדת על:*\n"
+            for goal in self.secondary_goals:
+                msg += f"  • {goal}\n"
+            msg += "\n"
+        
+        if self.skin_context:
+            msg += "👤 *העור שלך:*\n"
+            for key, value in self.skin_context.items():
+                msg += f"  • {key}: {value}\n"
+            msg += "\n"
+        
+        if self.current_routine:
+            msg += "🧴 *שגרה נוכחית:*\n"
+            for time, products in self.current_routine.items():
+                if products:
+                    msg += f"  {time}: {', '.join(products)}\n"
+            msg += "\n"
+        
+        if self.preferences:
+            msg += "✨ *העדפות:*\n"
+            for key, value in self.preferences.items():
+                msg += f"  • {key}: {value}\n"
+            msg += "\n"
+        
+        if self.restrictions:
+            msg += "⚠️ *מגבלות חשובות:*\n"
+            for restriction in self.restrictions:
+                msg += f"  • {restriction}\n"
+            msg += "\n"
+        
+        if self.key_gaps:
+            msg += "❓ *עדיין צריך להבהיר:*\n"
+            for gap in self.key_gaps:
+                msg += f"  • {gap}\n"
+            msg += "\n"
+        
+        msg += "_האם זה נכון? יש תיקונים לפני שאכין את השגרה?_"
+        return msg
+
+
 class RecommendationEngine:
-    """Generates personalized skincare recommendations based on SOP"""
+    """
+    Stateful recommendation engine that reasons before responding.
+    
+    This is NOT a template filler. Every output must be:
+    1. Traceable to user inputs
+    2. Contextually aware
+    3. Safety-validated
+    4. Personalized (two users = two different outputs)
+    """
     
     def __init__(self):
-        self.ingredient_rules = self._init_ingredient_rules()
-        self.spf_rules = self._init_spf_rules()
-        self.skin_type_products = self._init_skin_type_products()
-    
-    def _init_ingredient_rules(self) -> Dict:
-        """Initialize ingredient rules from SOP"""
+        # Safety rules - these override everything
+        self.contraindications = self._init_contraindications()
+        
+        # Ingredient knowledge base
+        self.ingredients = self._init_ingredient_knowledge()
+        
+    def _init_contraindications(self) -> Dict:
+        """Hard safety rules - never compromise on these"""
         return {
-            "hyperpigmentation": {
-                "safe": ["Vitamin C", "Niacinamide", "Alpha Arbutin", "Azelaic Acid"],
-                "avoid_pregnancy": ["Hydroquinone"],
-                "description": "brightening and evening skin tone",
-                "usage": "Apply once daily in the morning or evening",
-                "note": "Pair with SPF as these ingredients can make skin sun-sensitive"
+            "pregnancy": {
+                "forbidden": [
+                    "Retinol", "Retinoids", "Tretinoin", "Adapalene",
+                    "Hydroquinone", "High-dose Salicylic Acid (>2%)",
+                    "Benzoyl Peroxide (>5%)", "Essential oils (high concentration)"
+                ],
+                "safe_alternatives": {
+                    "Retinol": "Bakuchiol, Peptides",
+                    "Hydroquinone": "Vitamin C, Azelaic Acid, Niacinamide",
+                    "Salicylic Acid": "Azelaic Acid, Lactic Acid (low %)",
+                }
             },
-            "aging": {
-                "safe": ["Peptides", "Antioxidants", "Hyaluronic Acid"],
-                "avoid_pregnancy": ["Retinol", "Retinoids", "Tretinoin"],
-                "description": "reducing fine lines and improving elasticity",
-                "usage": "Start with 2-3 times per week, gradually increase to nightly",
-                "note": "Retinol users must use SPF 50+ daily"
+            "nursing": {
+                "forbidden": [
+                    "Retinol", "Retinoids", "Hydroquinone"
+                ],
+                "safe_alternatives": {
+                    "Retinol": "Bakuchiol, Peptides",
+                    "Hydroquinone": "Vitamin C, Azelaic Acid"
+                }
             },
-            "dryness": {
-                "safe": ["Hyaluronic Acid", "Ceramides", "Squalane", "Natural oils", "Glycerin"],
-                "avoid_pregnancy": [],
-                "description": "deep hydration and barrier repair",
-                "usage": "Apply twice daily on damp skin for best absorption",
-                "note": "Layer with moisturizer to seal in hydration"
-            },
-            "dehydration": {
-                "safe": ["Hyaluronic Acid", "Glycerin", "Sodium PCA"],
-                "avoid_pregnancy": [],
-                "description": "restoring skin's moisture balance",
-                "usage": "Apply on damp skin twice daily",
-                "note": "Drink plenty of water for best results"
-            },
-            "acne": {
-                "safe": ["Niacinamide", "Tea Tree Oil", "Azelaic Acid", "Zinc"],
-                "avoid_pregnancy": ["Salicylic Acid (high concentration)", "Benzoyl Peroxide (high concentration)"],
-                "pregnancy_safe_alternative": "Azelaic Acid or Tea Tree Oil",
-                "description": "controlling breakouts and reducing inflammation",
-                "usage": "Apply to affected areas or all over as tolerated",
-                "note": "Start slowly to avoid irritation"
-            },
-            "texture": {
-                "safe": ["PHA", "Gentle AHA", "Enzyme exfoliants", "Lactic Acid"],
-                "avoid_pregnancy": ["Strong AHA/BHA combinations", "High % Glycolic Acid"],
-                "description": "smoothing skin texture and refining pores",
-                "usage": "2-3 times per week, not on consecutive days",
-                "note": "Always follow with SPF in the morning"
-            },
-            "uneven texture": {
-                "safe": ["PHA", "Gentle AHA", "Enzyme exfoliants"],
-                "avoid_pregnancy": ["Strong AHA/BHA"],
-                "description": "smoothing rough patches and improving skin feel",
-                "usage": "2-3 times per week",
-                "note": "Avoid over-exfoliating"
-            },
-            "milia": {
-                "safe": ["Gentle chemical exfoliants", "Retinol (low %)", "Salicylic Acid"],
-                "avoid_pregnancy": ["Retinol"],
-                "description": "gentle exfoliation to prevent buildup",
-                "usage": "2-3 times per week",
-                "note": "If persistent, see a dermatologist for extraction"
-            },
-            "rosacea": {
-                "safe": ["Azelaic Acid", "Centella Asiatica", "Green Tea", "Niacinamide", "Colloidal Oatmeal"],
-                "avoid_pregnancy": [],
-                "description": "calming redness and reducing inflammation",
-                "usage": "Apply gently twice daily",
-                "note": "Avoid hot water, harsh scrubs, and irritating ingredients"
-            },
-            "enlarged pores": {
-                "safe": ["Niacinamide", "Gentle BHA", "Retinol"],
-                "avoid_pregnancy": ["Retinol", "High % BHA"],
-                "description": "minimizing pore appearance",
-                "usage": "Once daily, preferably in the evening",
-                "note": "Keep skin clean and avoid heavy comedogenic products"
+            "medications": {
+                "Accutane": "Avoid all exfoliants and actives - skin is extremely sensitive",
+                "Retinoids": "No additional vitamin A products",
+                "Antibiotics": "Avoid additional harsh actives"
             }
         }
     
-    def _init_spf_rules(self) -> Dict:
-        """Initialize SPF recommendations based on sun exposure"""
+    def _init_ingredient_knowledge(self) -> Dict:
+        """Ingredient solutions mapped to specific concerns"""
         return {
+            "hyperpigmentation": {
+                "primary": ["Vitamin C", "Niacinamide", "Azelaic Acid", "Alpha Arbutin"],
+                "supporting": ["Tranexamic Acid", "Kojic Acid", "Licorice Root"],
+                "usage": "Apply in morning or evening, always pair with SPF",
+                "timeline": "4-8 weeks for visible improvement",
+                "notes": "Consistency is key, results accumulate over time"
+            },
+            "aging": {
+                "primary": ["Retinol", "Peptides", "Vitamin C"],
+                "supporting": ["Hyaluronic Acid", "Antioxidants", "Ceramides"],
+                "usage": "Retinol: Start 2-3x/week evenings, build to nightly",
+                "timeline": "8-12 weeks for visible results",
+                "notes": "SPF 50+ non-negotiable with retinol"
+            },
+            "dryness": {
+                "primary": ["Hyaluronic Acid", "Ceramides", "Squalane"],
+                "supporting": ["Glycerin", "Fatty acids", "Urea"],
+                "usage": "Apply to damp skin, layer with occlusive",
+                "timeline": "2-4 weeks",
+                "notes": "Hydration vs occlusion - need both"
+            },
+            "dehydration": {
+                "primary": ["Hyaluronic Acid", "Glycerin", "Sodium PCA"],
+                "supporting": ["Aloe", "Panthenol"],
+                "usage": "Apply on damp skin morning and evening",
+                "timeline": "1-2 weeks",
+                "notes": "Drink water, humidifier helps"
+            },
+            "acne": {
+                "primary": ["Niacinamide", "Azelaic Acid", "Salicylic Acid"],
+                "supporting": ["Zinc", "Tea Tree (low %)", "Sulfur"],
+                "usage": "Start slowly, build tolerance",
+                "timeline": "6-8 weeks for improvement",
+                "notes": "Hormonal acne may need medical support"
+            },
+            "texture": {
+                "primary": ["Gentle AHA", "PHA", "Enzyme exfoliants"],
+                "supporting": ["Retinol (low start)"],
+                "usage": "2-3x per week, not consecutive days",
+                "timeline": "4-6 weeks",
+                "notes": "Over-exfoliation makes it worse"
+            },
+            "rosacea": {
+                "primary": ["Azelaic Acid", "Centella Asiatica", "Niacinamide"],
+                "supporting": ["Green Tea", "Oatmeal", "Zinc"],
+                "usage": "Gentle application, avoid triggers",
+                "timeline": "4-8 weeks",
+                "notes": "Avoid fragrance, essential oils, alcohol"
+            },
+            "enlarged_pores": {
+                "primary": ["Niacinamide", "Gentle BHA", "Retinol"],
+                "supporting": ["Clay masks (occasional)"],
+                "usage": "Daily niacinamide, exfoliants 2-3x/week",
+                "timeline": "6-8 weeks",
+                "notes": "Can't shrink pores, can minimize appearance"
+            }
+        }
+    
+    def reason_about_user(self, context: ConversationContext) -> ReasoningState:
+        """
+        Deep reasoning phase - analyze what we know and what's missing.
+        This is the critical thinking engine.
+        """
+        state = ReasoningState()
+        
+        # 1. Extract what we definitively know
+        state.known_facts = self._extract_known_facts(context)
+        
+        # 2. Identify critical data gaps
+        state.missing_critical = self._identify_critical_gaps(context)
+        
+        # 3. Check for contradictions
+        state.contradictions = self._detect_contradictions(context)
+        
+        # 4. Safety flags (pregnancy, meds, allergies)
+        state.safety_flags = self._check_safety_concerns(context)
+        
+        # 5. Determine concern priority
+        state.priority_concerns = self._rank_concerns(context)
+        
+        # 6. Assess confidence
+        state.confidence_level = self._assess_confidence(state, context)
+        
+        logger.info(f"Reasoning state: {state}")
+        return state
+    
+    def _extract_known_facts(self, context: ConversationContext) -> List[str]:
+        """Extract definitive facts we know about the user"""
+        facts = []
+        
+        if context.skin_profile.skin_type:
+            facts.append(f"Skin type: {context.skin_profile.skin_type}")
+        
+        if context.skin_profile.concerns:
+            facts.append(f"Concerns: {', '.join(context.skin_profile.concerns)}")
+        
+        if context.skin_profile.sun_exposure:
+            facts.append(f"Sun exposure: {context.skin_profile.sun_exposure}")
+        
+        if context.health_info.is_pregnant or context.health_info.is_nursing:
+            facts.append("Pregnancy/nursing status affects ingredient safety")
+        
+        if context.health_info.medications:
+            facts.append(f"Medications: {', '.join(context.health_info.medications)}")
+        
+        if context.health_info.allergies:
+            facts.append(f"Allergies: {', '.join(context.health_info.allergies)}")
+        
+        if context.preferences.budget_range:
+            facts.append(f"Budget: {context.preferences.budget_range}")
+        
+        return facts
+    
+    def _identify_critical_gaps(self, context: ConversationContext) -> List[DataGap]:
+        """Identify missing information that prevents good recommendations"""
+        gaps = []
+        
+        # Skin type ambiguity
+        if not context.skin_profile.skin_type or context.skin_profile.skin_type == "not sure":
+            # Check if we have enough clues to infer
+            if not self._can_infer_skin_type(context):
+                gaps.append(DataGap.SKIN_TYPE_AMBIGUOUS)
+        
+        # No clear priority among concerns
+        if len(context.skin_profile.concerns) > 2:
+            gaps.append(DataGap.CONCERN_PRIORITY_UNCLEAR)
+        
+        # Missing lifestyle context
+        if not context.skin_profile.sun_exposure:
+            gaps.append(DataGap.LIFESTYLE_CONTEXT_MISSING)
+        
+        # Health safety unclear
+        if (context.health_info.is_pregnant is None and 
+            context.health_info.is_nursing is None):
+            gaps.append(DataGap.SENSITIVITY_RISK)
+        
+        # Incomplete routine understanding
+        if not self._has_routine_context(context):
+            gaps.append(DataGap.CURRENT_ROUTINE_INCOMPLETE)
+        
+        # Budget undefined (impacts recommendations)
+        if not context.preferences.budget_range:
+            gaps.append(DataGap.BUDGET_UNDEFINED)
+        
+        return gaps
+    
+    def _can_infer_skin_type(self, context: ConversationContext) -> bool:
+        """Try to infer skin type from concerns and routine"""
+        # If they mention dryness + no oil concerns = probably dry
+        # If they mention breakouts + shine = probably oily
+        # etc. This is heuristic inference
+        
+        concerns = [c.lower() for c in context.skin_profile.concerns]
+        
+        if "dryness" in concerns or "dehydration" in concerns:
+            if not any(x in concerns for x in ["acne", "oily"]):
+                return True  # Can infer dry
+        
+        if "acne" in concerns:
+            # Might be oily, but could also be hormonal on dry skin
+            return False  # Can't safely infer
+        
+        return False
+    
+    def _has_routine_context(self, context: ConversationContext) -> bool:
+        """Check if we understand their current routine enough"""
+        # At minimum, need to know morning cleanser and SPF status
+        has_morning_info = (
+            context.routine.morning_cleanser is not None or
+            context.routine.morning_sunscreen is not None
+        )
+        return has_morning_info
+    
+    def _detect_contradictions(self, context: ConversationContext) -> List[str]:
+        """Find contradictory information that needs clarification"""
+        contradictions = []
+        
+        # Example: Says skin is dry but uses foaming cleanser twice daily
+        if context.skin_profile.skin_type == "dry":
+            if context.routine.morning_cleanser and "foaming" in context.routine.morning_cleanser.lower():
+                contradictions.append(
+                    "Mentioned dry skin but using foaming cleanser (can be stripping)"
+                )
+        
+        # Says concerned about aging but no SPF
+        if "aging" in [c.lower() for c in context.skin_profile.concerns]:
+            if not context.routine.morning_sunscreen:
+                contradictions.append(
+                    "Anti-aging goal but no SPF mentioned (SPF is #1 anti-aging step)"
+                )
+        
+        return contradictions
+    
+    def _check_safety_concerns(self, context: ConversationContext) -> List[str]:
+        """Flag any safety issues that need attention"""
+        flags = []
+        
+        if context.health_info.is_pregnant or context.health_info.is_nursing:
+            flags.append("Pregnancy/nursing: Must avoid certain ingredients")
+        
+        if context.health_info.medications:
+            for med in context.health_info.medications:
+                if any(x in med.lower() for x in ["accutane", "isotretinoin", "tretinoin"]):
+                    flags.append(f"Medication alert: {med} - extreme sensitivity risk")
+        
+        if context.health_info.allergies:
+            flags.append(f"Allergies documented: {', '.join(context.health_info.allergies)}")
+        
+        return flags
+    
+    def _rank_concerns(self, context: ConversationContext) -> List[str]:
+        """Prioritize concerns based on safety and user goals"""
+        concerns = context.skin_profile.concerns.copy()
+        
+        # Safety-critical concerns first
+        priority_order = ["rosacea", "acne", "sensitivity"]
+        
+        prioritized = []
+        for priority in priority_order:
+            for concern in concerns:
+                if priority in concern.lower():
+                    prioritized.append(concern)
+                    concerns.remove(concern)
+                    break
+        
+        # Then add remaining in order mentioned
+        prioritized.extend(concerns)
+        
+        return prioritized
+    
+    def _assess_confidence(self, state: ReasoningState, context: ConversationContext) -> str:
+        """Determine confidence level for making recommendations"""
+        
+        # Can't be high confidence with critical gaps or safety flags unresolved
+        if state.missing_critical or state.safety_flags:
+            return "low"
+        
+        # Medium if we have basics but some minor gaps
+        if state.contradictions:
+            return "medium"
+        
+        # High if we have solid data across all dimensions
+        has_skin_type = context.skin_profile.skin_type is not None
+        has_concerns = len(context.skin_profile.concerns) > 0
+        has_health_info = (
+            context.health_info.is_pregnant is not None or
+            context.health_info.is_nursing is not None
+        )
+        has_sun_exposure = context.skin_profile.sun_exposure is not None
+        
+        if all([has_skin_type, has_concerns, has_health_info, has_sun_exposure]):
+            return "high"
+        
+        return "medium"
+    
+    def generate_next_question(
+        self, 
+        context: ConversationContext,
+        state: ReasoningState
+    ) -> str:
+        """
+        Generate targeted follow-up question based on reasoning.
+        This is adaptive, not scripted.
+        """
+        language = context.language
+        
+        # Get highest priority gap
+        next_gap = state.get_next_question_priority()
+        
+        if not next_gap:
+            # No gaps - ready for summary confirmation
+            return self._generate_summary_confirmation(context)
+        
+        # Generate question for specific gap
+        if next_gap == DataGap.SKIN_TYPE_AMBIGUOUS:
+            return self._ask_skin_type_followup(context, language)
+        
+        elif next_gap == DataGap.CONCERN_PRIORITY_UNCLEAR:
+            return self._ask_priority_followup(context, language)
+        
+        elif next_gap == DataGap.LIFESTYLE_CONTEXT_MISSING:
+            return self._ask_lifestyle_followup(context, language)
+        
+        elif next_gap == DataGap.SENSITIVITY_RISK:
+            return self._ask_health_safety(context, language)
+        
+        elif next_gap == DataGap.CURRENT_ROUTINE_INCOMPLETE:
+            return self._ask_routine_followup(context, language)
+        
+        elif next_gap == DataGap.BUDGET_UNDEFINED:
+            return self._ask_budget(context, language)
+        
+        # Fallback
+        return self._generic_followup(language)
+    
+    def _ask_skin_type_followup(self, context: ConversationContext, language: str) -> str:
+        """Contextual question about skin type"""
+        concerns = context.skin_profile.concerns
+        
+        if language == "hebrew":
+            if "dryness" in [c.lower() for c in concerns]:
+                return (
+                    "ציינת יובש - האם העור שלך מרגיש מתוח וקשקש, "
+                    "או שזה יותר תחושת חוסר לחות?"
+                )
+            elif "acne" in [c.lower() for c in concerns]:
+                return (
+                    "לגבי הפצעונים - האם העור שלך נוטה להיות מבריק במהלך היום, "
+                    "או שהפצעונים מופיעים בעור יבש?"
+                )
+            return "איך היית מתארת את סוג העור שלך - יבש, שמן, או מעורב?"
+        
+        else:  # English
+            if "dryness" in [c.lower() for c in concerns]:
+                return (
+                    "You mentioned dryness - does your skin feel tight and flaky, "
+                    "or is it more of a dehydrated feeling?"
+                )
+            elif "acne" in [c.lower() for c in concerns]:
+                return (
+                    "For the breakouts you're experiencing - does your skin tend to get "
+                    "shiny during the day, or do you get acne on dry skin?"
+                )
+            return "How would you describe your skin type - dry, oily, or combination?"
+    
+    def _ask_priority_followup(self, context: ConversationContext, language: str) -> str:
+        """Ask user to prioritize concerns"""
+        concerns = context.skin_profile.concerns
+        
+        if language == "hebrew":
+            concerns_list = "\n".join([f"  • {c}" for c in concerns])
+            return (
+                f"ציינת כמה בעיות:\n{concerns_list}\n\n"
+                f"מה הכי מפריע לך? במה נתמקד בשגרה?"
+            )
+        else:
+            concerns_list = "\n".join([f"  • {c}" for c in concerns])
+            return (
+                f"You mentioned several concerns:\n{concerns_list}\n\n"
+                f"Which bothers you most? What should we prioritize in your routine?"
+            )
+    
+    def _ask_lifestyle_followup(self, context: ConversationContext, language: str) -> str:
+        """Ask about sun exposure and lifestyle"""
+        if language == "hebrew":
+            return (
+                "כמה זמן את נמצאת בשמש במהלך היום? "
+                "זה חשוב לקביעת ההגנה מהשמש שתצטרכי."
+            )
+        else:
+            return (
+                "How much time do you spend in the sun during a typical day? "
+                "This helps me recommend the right sun protection."
+            )
+    
+    def _ask_health_safety(self, context: ConversationContext, language: str) -> str:
+        """Ask critical health safety questions"""
+        if language == "hebrew":
+            return (
+                "שאלת בטיחות חשובה: "
+                "האם את בהריון, מניקה, או מתכננת הריון בקרוב? "
+                "זה משפיע על המרכיבים שבטוחים עבורך."
+            )
+        else:
+            return (
+                "Important safety question: "
+                "Are you currently pregnant, nursing, or planning pregnancy soon? "
+                "This affects which ingredients are safe for you."
+            )
+    
+    def _ask_routine_followup(self, context: ConversationContext, language: str) -> str:
+        """Ask about current routine gaps"""
+        if language == "hebrew":
+            if not context.routine.morning_sunscreen:
+                return "האם את משתמשת בהגנה מהשמש בבוקר?"
+            return "ספרי לי על שגרת הבוקר שלך - במה את משתמשת?"
+        else:
+            if not context.routine.morning_sunscreen:
+                return "Do you currently use sunscreen in the morning?"
+            return "Tell me about your morning routine - what products do you use?"
+    
+    def _ask_budget(self, context: ConversationContext, language: str) -> str:
+        """Ask about budget preferences"""
+        if language == "hebrew":
+            return (
+                "מה תקציב הטיפוח שלך? "
+                "זה עוזר לי להמליץ על מוצרים שמתאימים לך:\n"
+                "  • חסכוני\n"
+                "  • בינוני\n"
+                "  • פרימיום"
+            )
+        else:
+            return (
+                "What's your skincare budget? "
+                "This helps me recommend products that work for you:\n"
+                "  • Budget-friendly\n"
+                "  • Mid-range\n"
+                "  • Premium"
+            )
+    
+    def _generic_followup(self, language: str) -> str:
+        """Generic follow-up if no specific gap identified"""
+        if language == "hebrew":
+            return "יש עוד משהו שחשוב לך שאדע לפני שאכין את השגרה?"
+        else:
+            return "Is there anything else important I should know before creating your routine?"
+    
+    def _generate_summary_confirmation(self, context: ConversationContext) -> str:
+        """Generate mid-conversation summary for user confirmation"""
+        snapshot = self._create_user_snapshot(context)
+        return snapshot.to_confirmation_message(context.language)
+    
+    def _create_user_snapshot(self, context: ConversationContext) -> UserSnapshot:
+        """Create structured snapshot of user state"""
+        
+        # Extract primary vs secondary goals
+        concerns = context.skin_profile.concerns
+        primary = concerns[:1] if concerns else []
+        secondary = concerns[1:] if len(concerns) > 1 else []
+        
+        # Map concerns to goals
+        primary_goals = [self._concern_to_goal(c) for c in primary]
+        secondary_goals = [self._concern_to_goal(c) for c in secondary]
+        
+        # Current routine summary
+        routine = {
+            "Morning": self._summarize_routine_time(context, "morning"),
+            "Evening": self._summarize_routine_time(context, "evening")
+        }
+        
+        # Skin context
+        skin_context = {}
+        if context.skin_profile.skin_type:
+            skin_context["skin_type"] = context.skin_profile.skin_type
+        if context.skin_profile.sun_exposure:
+            skin_context["sun_exposure"] = context.skin_profile.sun_exposure
+        
+        # Preferences
+        preferences = {}
+        if context.preferences.budget_range:
+            preferences["budget"] = context.preferences.budget_range
+        if context.preferences.requirements:
+            preferences["requirements"] = ", ".join(context.preferences.requirements)
+        
+        # Restrictions
+        restrictions = []
+        if context.health_info.is_pregnant:
+            restrictions.append("Pregnancy - avoiding unsafe ingredients")
+        if context.health_info.is_nursing:
+            restrictions.append("Nursing - avoiding unsafe ingredients")
+        if context.health_info.medications:
+            restrictions.extend([f"Medication: {m}" for m in context.health_info.medications])
+        if context.health_info.allergies:
+            restrictions.extend([f"Allergy: {a}" for a in context.health_info.allergies])
+        
+        # Key gaps still remaining
+        state = self.reason_about_user(context)
+        key_gaps = [gap.value.replace('_', ' ').title() for gap in state.missing_critical]
+        
+        return UserSnapshot(
+            primary_goals=primary_goals,
+            secondary_goals=secondary_goals,
+            current_routine=routine,
+            skin_context=skin_context,
+            preferences=preferences,
+            restrictions=restrictions,
+            key_gaps=key_gaps
+        )
+    
+    def _concern_to_goal(self, concern: str) -> str:
+        """Convert concern to user-friendly goal"""
+        mapping = {
+            "hyperpigmentation": "Even out dark spots and skin tone",
+            "aging": "Reduce fine lines and maintain youthful skin",
+            "dryness": "Deep hydration and comfort",
+            "dehydration": "Restore moisture balance",
+            "acne": "Clear breakouts and prevent new ones",
+            "texture": "Smooth and refine skin texture",
+            "rosacea": "Calm redness and sensitivity",
+            "enlarged_pores": "Minimize pore appearance"
+        }
+        concern_lower = concern.lower()
+        for key, goal in mapping.items():
+            if key in concern_lower:
+                return goal
+        return concern
+    
+    def _summarize_routine_time(self, context: ConversationContext, time: str) -> List[str]:
+        """Summarize routine products for a time of day"""
+        products = []
+        
+        if time == "morning":
+            if context.routine.morning_cleanser:
+                products.append(f"Cleanser: {context.routine.morning_cleanser}")
+            if context.routine.morning_treatments:
+                products.extend([f"Treatment: {t}" for t in context.routine.morning_treatments])
+            if context.routine.morning_moisturizer:
+                products.append(f"Moisturizer: {context.routine.morning_moisturizer}")
+            if context.routine.morning_sunscreen:
+                products.append(f"SPF: {context.routine.morning_sunscreen}")
+        
+        elif time == "evening":
+            if context.routine.evening_makeup_removal:
+                products.append(f"Makeup removal: {context.routine.evening_makeup_removal}")
+            if context.routine.evening_cleanser:
+                products.append(f"Cleanser: {context.routine.evening_cleanser}")
+            if context.routine.evening_treatments:
+                products.extend([f"Treatment: {t}" for t in context.routine.evening_treatments])
+            if context.routine.evening_moisturizer:
+                products.append(f"Moisturizer: {context.routine.evening_moisturizer}")
+        
+        return products if products else ["None mentioned"]
+    
+    def generate_recommendations(
+        self,
+        context: ConversationContext,
+        state: ReasoningState
+    ) -> str:
+        """
+        Generate final recommendations with full traceability.
+        
+        CRITICAL: Every recommendation must explicitly reference user inputs.
+        """
+        language = context.language
+        
+        # Safety check
+        if not state.is_ready_for_recommendation():
+            logger.warning("Attempted to generate recommendations without sufficient data")
+            return self.generate_next_question(context, state)
+        
+        # Build traceable recommendations
+        recommendations = self._build_traceable_routine(context, state)
+        
+        # Format for WhatsApp
+        if language == "hebrew":
+            return self._format_recommendations_hebrew(recommendations, context)
+        else:
+            return self._format_recommendations_english(recommendations, context)
+    
+    def _build_traceable_routine(
+        self,
+        context: ConversationContext,
+        state: ReasoningState
+    ) -> Dict:
+        """
+        Build routine where every step traces back to user input.
+        This is the core personalization engine.
+        """
+        routine = {
+            "morning": [],
+            "evening": [],
+            "notes": [],
+            "timeline": []
+        }
+        
+        # Start with foundations - cleanser
+        routine["morning"].append(self._recommend_cleanser(context, "morning"))
+        routine["evening"].append(self._recommend_cleanser(context, "evening"))
+        
+        # Address priority concerns with treatments
+        for concern in state.priority_concerns[:2]:  # Max 2 concerns to avoid overwhelming
+            treatment = self._recommend_treatment(concern, context)
+            if treatment:
+                # Decide morning vs evening based on ingredient
+                if self._is_photosensitive(treatment["ingredients"]):
+                    routine["evening"].append(treatment)
+                else:
+                    routine["morning"].append(treatment)
+        
+        # Moisturizer
+        routine["morning"].append(self._recommend_moisturizer(context, "morning"))
+        routine["evening"].append(self._recommend_moisturizer(context, "evening"))
+        
+        # SPF (morning only)
+        routine["morning"].append(self._recommend_spf(context))
+        
+        # Add usage notes and timeline
+        routine["notes"] = self._generate_usage_notes(context, state)
+        routine["timeline"] = self._generate_timeline(state.priority_concerns)
+        
+        return routine
+    
+    def _recommend_cleanser(self, context: ConversationContext, time: str) -> Dict:
+        """Recommend cleanser with explicit reasoning"""
+        skin_type = context.skin_profile.skin_type
+        
+        # Map to recommendation with reasoning
+        cleansers = {
+            "dry": {
+                "type": "Cream or oil-based cleanser",
+                "reason": f"Because you mentioned your skin is {skin_type}, this won't strip natural oils",
+                "example": "CeraVe Hydrating Cleanser or similar cream cleanser"
+            },
+            "oily": {
+                "type": "Gel or foaming cleanser",
+                "reason": f"Since you have {skin_type} skin, this helps control excess oil",
+                "example": "La Roche-Posay Effaclar or similar gel cleanser"
+            },
+            "combination": {
+                "type": "Balanced gel cleanser",
+                "reason": f"For your {skin_type} skin, this addresses both oily and dry areas",
+                "example": "CeraVe Foaming Facial Cleanser or similar balanced formula"
+            },
+            "normal": {
+                "type": "Gentle daily cleanser",
+                "reason": f"Your {skin_type} skin needs maintenance without disruption",
+                "example": "Cetaphil Gentle Skin Cleanser or similar"
+            }
+        }
+        
+        # Get recommendation or default
+        rec = cleansers.get(skin_type, cleansers["normal"])
+        
+        return {
+            "step": "Cleanser",
+            "product": rec["type"],
+            "reason": rec["reason"],
+            "example": rec["example"],
+            "time": time
+        }
+    
+    def _recommend_treatment(self, concern: str, context: ConversationContext) -> Optional[Dict]:
+        """Recommend treatment with safety checks and reasoning"""
+        
+        # Safety first - check contraindications
+        is_safe, alternative = self._check_ingredient_safety(concern, context)
+        
+        if not is_safe:
+            if not alternative:
+                return None  # Skip this concern if no safe alternative
+            # Use alternative
+            ingredient_info = alternative
+            safety_note = " (pregnancy-safe alternative)"
+        else:
+            ingredient_info = self.ingredients.get(concern.lower(), {})
+            safety_note = ""
+        
+        if not ingredient_info:
+            return None
+        
+        primary = ingredient_info.get("primary", [])
+        usage = ingredient_info.get("usage", "Apply as directed")
+        timeline = ingredient_info.get("timeline", "4-8 weeks")
+        
+        # Build recommendation with explicit tracing
+        return {
+            "step": "Treatment",
+            "concern": concern,
+            "ingredients": primary,
+            "reason": f"To address the {concern} you mentioned{safety_note}",
+            "usage": usage,
+            "timeline": f"Expect results in {timeline}",
+            "product": f"Serum or treatment with {' or '.join(primary[:2])}"
+        }
+    
+    def _check_ingredient_safety(
+        self,
+        concern: str,
+        context: ConversationContext
+    ) -> Tuple[bool, Optional[Dict]]:
+        """
+        Check if standard treatment is safe, provide alternative if not.
+        Returns: (is_safe, alternative_ingredient_info)
+        """
+        is_pregnant = context.health_info.is_pregnant
+        is_nursing = context.health_info.is_nursing
+        medications = context.health_info.medications
+        
+        # Check pregnancy/nursing
+        if is_pregnant or is_nursing:
+            concern_lower = concern.lower()
+            ingredient_info = self.ingredients.get(concern_lower, {})
+            primary_ingredients = ingredient_info.get("primary", [])
+            
+            # Check if any primary ingredient is contraindicated
+            forbidden = self.contraindications["pregnancy"]["forbidden"]
+            
+            for ingredient in primary_ingredients:
+                if any(forbidden_ing.lower() in ingredient.lower() for forbidden_ing in forbidden):
+                    # Need alternative
+                    alternatives = self.contraindications["pregnancy"]["safe_alternatives"]
+                    
+                    # Find safe alternative for this concern
+                    for forbidden_ing, safe_alt in alternatives.items():
+                        if forbidden_ing.lower() in ingredient.lower():
+                            # Build alternative ingredient info
+                            return False, {
+                                "primary": [safe_alt],
+                                "usage": "Apply as directed - pregnancy safe",
+                                "timeline": ingredient_info.get("timeline", "6-8 weeks"),
+                                "notes": f"Alternative to {ingredient} for pregnancy safety"
+                            }
+            
+            return True, None  # Safe
+        
+        # Check medications
+        if medications:
+            for med in medications:
+                if "accutane" in med.lower() or "isotretinoin" in med.lower():
+                    # Extreme sensitivity - avoid all actives
+                    return False, None
+        
+        return True, None
+    
+    def _is_photosensitive(self, ingredients: List[str]) -> bool:
+        """Check if ingredients increase sun sensitivity"""
+        photosensitive = ["retinol", "aha", "bha", "vitamin c"]
+        
+        for ingredient in ingredients:
+            ing_lower = ingredient.lower()
+            if any(ps in ing_lower for ps in photosensitive):
+                return True
+        
+        return False
+    
+    def _recommend_moisturizer(self, context: ConversationContext, time: str) -> Dict:
+        """Recommend moisturizer with reasoning"""
+        skin_type = context.skin_profile.skin_type
+        
+        moisturizers = {
+            "dry": {
+                "morning": "Rich hydrating cream",
+                "evening": "Intensive night cream",
+                "reason": f"Your {skin_type} skin needs deep hydration and barrier repair"
+            },
+            "oily": {
+                "morning": "Lightweight gel moisturizer",
+                "evening": "Oil-free gel moisturizer",
+                "reason": f"For {skin_type} skin, this hydrates without adding excess oil"
+            },
+            "combination": {
+                "morning": "Balanced lotion",
+                "evening": "Light night cream",
+                "reason": f"Balances hydration across your {skin_type} skin zones"
+            },
+            "normal": {
+                "morning": "Light day moisturizer",
+                "evening": "Nourishing night moisturizer",
+                "reason": f"Maintains your {skin_type} skin's natural balance"
+            }
+        }
+        
+        rec = moisturizers.get(skin_type, moisturizers["normal"])
+        
+        return {
+            "step": "Moisturizer",
+            "product": rec[time],
+            "reason": rec["reason"],
+            "time": time
+        }
+    
+    def _recommend_spf(self, context: ConversationContext) -> Dict:
+        """Recommend SPF with explicit reasoning"""
+        sun_exposure = context.skin_profile.sun_exposure or "moderate"
+        skin_type = context.skin_profile.skin_type
+        
+        spf_levels = {
             "minimal": {
                 "spf": "SPF 30+",
                 "reapply": "Reapply if going outside",
-                "notes": "Since you're mostly indoors, a daily SPF 30+ is sufficient. Apply in the morning after moisturizer.",
-                "texture_guide": True
+                "reason": f"Since you're mostly indoors with {sun_exposure} sun exposure"
             },
             "moderate": {
                 "spf": "SPF 50",
-                "reapply": "Reapply every 4 hours",
-                "notes": "With moderate sun exposure, use SPF 50 and set reminders to reapply every 4 hours when outdoors.",
-                "texture_guide": True
+                "reapply": "Reapply every 4 hours outdoors",
+                "reason": f"With your {sun_exposure} sun exposure, this protects adequately"
             },
             "high": {
                 "spf": "SPF 50+ (water-resistant)",
                 "reapply": "Reapply every 2 hours",
-                "notes": "High sun exposure requires SPF 50+ water-resistant formula. Reapply every 2 hours without exception, and consider additional protection like hats and shade.",
-                "texture_guide": True
+                "reason": f"Your {sun_exposure} sun exposure requires maximum protection"
             }
         }
-    
-    def _init_skin_type_products(self) -> Dict:
-        """Initialize product recommendations by skin type"""
+        
+        rec = spf_levels.get(sun_exposure, spf_levels["moderate"])
+        
+        # Add texture recommendation based on skin type
+        textures = {
+            "oily": "gel or fluid texture",
+            "dry": "cream texture (adds hydration)",
+            "combination": "lightweight lotion",
+            "normal": "any comfortable texture"
+        }
+        texture = textures.get(skin_type, "lotion")
+        
         return {
-            "cleanser": {
-                "dry": {
-                    "morning": "Gentle, cream-based cleanser or micellar water",
-                    "evening": "Cream or oil-based cleanser",
-                    "reason": "Won't strip natural oils from dry skin"
-                },
-                "oily": {
-                    "morning": "Gel or foaming cleanser",
-                    "evening": "Foaming or gel cleanser",
-                    "reason": "Helps control excess oil without over-drying"
-                },
-                "combination": {
-                    "morning": "Balanced gel cleanser",
-                    "evening": "Gentle foaming cleanser",
-                    "reason": "Addresses both oily and dry areas without irritation"
-                },
-                "normal": {
-                    "morning": "Gentle daily cleanser",
-                    "evening": "Gentle daily cleanser",
-                    "reason": "Maintains skin's natural balance"
-                }
-            },
-            "moisturizer": {
-                "dry": {
-                    "morning": "Rich hydrating cream",
-                    "evening": "Intensive night cream",
-                    "reason": "Provides deep hydration and barrier repair for dry skin"
-                },
-                "oily": {
-                    "morning": "Lightweight gel moisturizer",
-                    "evening": "Oil-free gel moisturizer",
-                    "reason": "Hydrates without adding excess oil or clogging pores"
-                },
-                "combination": {
-                    "morning": "Balanced lotion",
-                    "evening": "Light night cream",
-                    "reason": "Balances hydration across different zones"
-                },
-                "normal": {
-                    "morning": "Light day moisturizer",
-                    "evening": "Nourishing night moisturizer",
-                    "reason": "Maintains skin's moisture balance"
-                }
-            },
-            "sunscreen_texture": {
-                "oily": "gel or fluid texture (non-comedogenic)",
-                "dry": "cream or lotion texture (hydrating)",
-                "combination": "lightweight lotion or gel-cream",
-                "normal": "any comfortable texture"
-            }
+            "step": "Sunscreen",
+            "product": f"{rec['spf']} - {texture}",
+            "reason": rec["reason"],
+            "usage": rec["reapply"],
+            "note": "Non-negotiable step - protects against all concerns"
         }
     
-    def generate_routine(self, context: ConversationContext) -> str:
-        """
-        Main entry point - generates complete routine message
+    def _generate_usage_notes(
+        self,
+        context: ConversationContext,
+        state: ReasoningState
+    ) -> List[str]:
+        """Generate personalized usage notes"""
+        notes = []
         
-        Args:
-            context: User's conversation context with all collected data
-            
-        Returns:
-            Formatted routine message ready to send via WhatsApp
-        """
-        try:
-            logger.info(f"Generating routine for user {context.user_id}")
-            logger.info(f"Profile: {context.skin_profile.skin_type}, Concerns: {context.skin_profile.concerns}")
-            logger.info(f"Pregnant: {context.health_info.is_pregnant}, Nursing: {context.health_info.is_nursing}")
-            
-            # Check if user has shared their current routine
-            # context.routine is likely a list of UserRoutine objects
-            has_current_routine = False
-            
-            if context.routine:
-                # Check if it's a list/collection with items
-                if isinstance(context.routine, (list, tuple)) and len(context.routine) > 0:
-                    has_current_routine = True
-                    logger.info(f"User has {len(context.routine)} routine steps")
-                # Or if it's a single object with a product
-                elif hasattr(context.routine, 'product') and context.routine.product:
-                    has_current_routine = True
-                    logger.info(f"User has routine step: {context.routine.step}")
-                # Or check for any string attributes with content
-                elif isinstance(context.routine, str) and len(context.routine) > 0:
-                    has_current_routine = True
-                    logger.info("User has routine text")
-            
-            # FALLBACK: Check conversation state - if they've completed the conversation,
-            # they've likely shared routine information even if not stored in routine table
-            if not has_current_routine and hasattr(context, 'state'):
-                state_str = str(context.state)
-                # If in SUMMARY or COMPLETE state, they've been through full conversation
-                if 'SUMMARY' in state_str or 'COMPLETE' in state_str:
-                    has_current_routine = True
-                    logger.info(f"User in {state_str} state - assuming routine discussed in conversation")
-            
-            logger.info(f"Final decision: has_current_routine = {has_current_routine}")
-            
-            if has_current_routine:
-                # User already has a routine - give targeted advice
-                logger.info("User has existing routine - generating targeted recommendations")
-                return self._generate_targeted_recommendations(context)
-            else:
-                # User needs a full routine from scratch
-                logger.info("User needs full routine - generating complete recommendations")
-                return self._generate_full_routine(context)
-                
-        except Exception as e:
-            logger.error(f"Error generating routine: {e}", exc_info=True)
-            return self._get_error_message(context.language)
-    
-    def _generate_targeted_recommendations(self, context: ConversationContext) -> str:
-        """
-        Generate concise, targeted advice for users with existing routines
-        """
-        language = context.language
+        # Introduction pace
+        notes.append(
+            "Introduce one new product every 1-2 weeks to identify any reactions"
+        )
         
-        # Start with acknowledgment
-        if language in ["he", "hebrew"]:
-            msg = "💚 *שגרה מצוינת שיש לך!*\n\n"
-            msg += "הנה כמה המלצות ממוקדות:\n\n"
-        else:
-            msg = "💚 *Great routine you have there!*\n\n"
-            msg += "Here are my targeted recommendations:\n\n"
+        # Patch testing
+        notes.append(
+            "Always patch test new products on your inner forearm for 24 hours"
+        )
         
-        # Analyze their concerns and give 2-3 specific suggestions
-        suggestions = self._get_smart_suggestions(context)
-        
-        for i, suggestion in enumerate(suggestions[:3], 1):
-            msg += f"{i}. {suggestion}\n\n"
-        
-        # Add SPF reminder if relevant
-        if context.skin_profile.sun_exposure:
-            spf_info = self.spf_rules.get(context.skin_profile.sun_exposure.lower())
-            if spf_info and language not in ["he", "hebrew"]:
-                msg += f"☀️ *SPF Reminder:* {spf_info['notes']}\n\n"
-            elif spf_info:
-                msg += f"☀️ *תזכורת הגנה:* SPF 50 חובה! יש למרוח מחדש כל 4 שעות.\n\n"
-        
-        # Add safety notes if needed
-        if context.health_info.is_pregnant:
-            if language in ["he", "hebrew"]:
-                msg += "🤰 *הריון:* הימנעי מרטינול, חומצות בריכוז גבוה והידרוקינון.\n\n"
-            else:
-                msg += "🤰 *Pregnancy:* Avoid retinol, high-concentration acids, and hydroquinone.\n\n"
-        
-        # Closing
-        if language in ["he", "hebrew"]:
-            msg += "💬 יש שאלות נוספות? אני כאן!"
-        else:
-            msg += "💬 Have more questions? I'm here to help!"
-        
-        logger.info(f"Generated targeted recommendations: {len(msg)} characters")
-        return msg
-
-    def _get_smart_suggestions(self, context: ConversationContext) -> List[str]:
-        """
-        Generate smart, specific suggestions based on concerns and existing routine
-        """
-        suggestions = []
-        language = context.language
-        
-        # Get top concerns
-        concerns = [c.lower() for c in context.skin_profile.concerns] if context.skin_profile.concerns else []
-        
-        # Generate suggestions based on concerns
-        for concern in concerns[:3]:  # Top 3 concerns max
-            if concern in ['hyperpigmentation', 'dark spots', 'melasma', 'pigmentation']:
-                if language in ["he", "hebrew"]:
-                    suggestions.append("✨ *להבהרת פיגמנטציה:* הוסיפי ויטמין C בבוקר + ניאצינמייד בערב")
-                else:
-                    suggestions.append("✨ *For brightening:* Add Vitamin C (AM) + Niacinamide (PM) for best results")
-                    
-            elif concern in ['aging', 'wrinkles', 'fine lines', 'anti-aging', 'anti aging']:
-                if language in ["he", "hebrew"]:
-                    suggestions.append("🌙 *נגד קמטים:* רטינול 2-3 פעמים בשבוע בערב (התחילי מאחוז נמוך)")
-                else:
-                    suggestions.append("🌙 *Anti-aging:* Start retinol 2-3x/week in PM (begin with low concentration)")
-                    
-            elif concern in ['acne', 'breakouts', 'pimples']:
-                if language in ["he", "hebrew"]:
-                    suggestions.append("🎯 *לאקנה:* ניאצינמייד + חומצה סליצילית (BHA) 2-3 פעמים בשבוע")
-                else:
-                    suggestions.append("🎯 *For acne:* Niacinamide + Salicylic acid (BHA) 2-3x/week")
-                    
-            elif concern in ['dryness', 'dry skin', 'dehydration']:
-                if language in ["he", "hebrew"]:
-                    suggestions.append("💧 *לחות:* חומצה היאלורונית על עור לח + סרום שמן בערב")
-                else:
-                    suggestions.append("💧 *Hydration boost:* Hyaluronic acid on damp skin + facial oil at night")
-                    
-            elif concern in ['texture', 'rough texture', 'bumpy', 'uneven texture']:
-                if language in ["he", "hebrew"]:
-                    suggestions.append("✨ *לטקסטורה:* פילינג עדין עם AHA/PHA 2-3 פעמים בשבוע")
-                else:
-                    suggestions.append("✨ *Smooth texture:* Gentle chemical exfoliant (AHA/PHA) 2-3x/week")
-                    
-            elif concern in ['pores', 'enlarged pores', 'large pores']:
-                if language in ["he", "hebrew"]:
-                    suggestions.append("🎯 *לנקבוביות:* ניאצינמייד יומי + רטינול בהדרגה")
-                else:
-                    suggestions.append("🎯 *Minimize pores:* Daily niacinamide + gradual retinol introduction")
-        
-        # If no specific suggestions, give general advice
-        if not suggestions:
-            if language in ["he", "hebrew"]:
-                suggestions.append("💚 *המשיכי כך!* השגרה שלך נראית טוב. תני לה 4-6 שבועות לעבוד.")
-            else:
-                suggestions.append("💚 *Keep it up!* Your routine looks solid. Give it 4-6 weeks to show results.")
-        
-        # Add hydration tip if not already mentioned
-        if 'dryness' not in ' '.join(concerns) and len(suggestions) < 3:
-            if language in ["he", "hebrew"]:
-                suggestions.append("💧 *טיפ נוסף:* שתי הרבה מים והשתמשי במכשיר אדים בחדר השינה")
-            else:
-                suggestions.append("💧 *Extra tip:* Stay hydrated and consider a bedroom humidifier")
-        
-        return suggestions
-    
-    def _generate_full_routine(self, context: ConversationContext) -> str:
-        """
-        Generate full routine for users without existing routines
-        """
-        # Build routines
-        morning = self._build_morning_routine(context)
-        evening = self._build_evening_routine(context)
-        instructions = self._get_usage_instructions(context)
-        
-        # Format for WhatsApp
-        message = self._format_message(morning, evening, instructions, context.language)
-        
-        logger.info(f"Full routine generated successfully for user {context.user_id}")
-        return message
-    
-    def _build_morning_routine(self, context: ConversationContext) -> Dict:
-        """Build morning skincare routine"""
-        skin_type = context.skin_profile.skin_type or "normal"
-        
-        routine = {
-            "cleanser": self._get_cleanser(skin_type, "morning"),
-            "treatment": self._get_treatment(
-                concerns=context.skin_profile.concerns,
-                is_pregnant=context.health_info.is_pregnant or context.health_info.is_nursing,
-                time="morning"
-            ),
-            "moisturizer": self._get_moisturizer(skin_type, is_night=False),
-            "sunscreen": self._get_sunscreen(
-                sun_exposure=context.skin_profile.sun_exposure,
-                skin_type=skin_type
+        # Start slowly
+        if any("retinol" in str(state).lower() for state in state.known_facts):
+            notes.append(
+                "Start active treatments 2-3x per week, gradually increase to nightly as tolerated"
             )
-        }
-        return routine
-    
-    def _build_evening_routine(self, context: ConversationContext) -> Dict:
-        """Build evening skincare routine"""
-        skin_type = context.skin_profile.skin_type or "normal"
         
-        routine = {
-            "makeup_removal": self._get_makeup_removal(skin_type),
-            "cleanser": self._get_cleanser(skin_type, "evening"),
-            "treatment": self._get_treatment(
-                concerns=context.skin_profile.concerns,
-                is_pregnant=context.health_info.is_pregnant or context.health_info.is_nursing,
-                time="evening"
-            ),
-            "moisturizer": self._get_moisturizer(skin_type, is_night=True)
-        }
-        return routine
-    
-    def _get_cleanser(self, skin_type: str, time: str) -> Dict:
-        """Select appropriate cleanser"""
-        cleanser_data = self.skin_type_products["cleanser"].get(
-            skin_type.lower(),
-            self.skin_type_products["cleanser"]["normal"]
-        )
-        
-        return {
-            "product": cleanser_data[time],
-            "reason": cleanser_data["reason"]
-        }
-    
-    def _get_makeup_removal(self, skin_type: str) -> Dict:
-        """Select makeup removal method"""
-        removal_map = {
-            "dry": {
-                "product": "Oil-based cleanser or cleansing balm",
-                "reason": "Gently removes makeup while nourishing dry skin"
-            },
-            "oily": {
-                "product": "Micellar water or gentle makeup remover",
-                "reason": "Effectively removes makeup without adding oil"
-            },
-            "combination": {
-                "product": "Micellar water or cleansing water",
-                "reason": "Removes makeup gently without disrupting balance"
-            },
-            "normal": {
-                "product": "Micellar water or cleansing oil",
-                "reason": "Thoroughly removes makeup while being gentle"
-            }
-        }
-        
-        return removal_map.get(skin_type.lower(), removal_map["normal"])
-    
-    def _get_treatment(self, concerns: List[str], is_pregnant: bool, time: str) -> Optional[Dict]:
-        """Select treatment based on primary concern"""
-        if not concerns:
-            # Default treatment for general skin health
-            return {
-                "product": "Niacinamide serum",
-                "reason": "Versatile ingredient that improves overall skin health, reduces redness, and strengthens barrier",
-                "usage": "Apply 2-4 drops after cleansing, before moisturizer",
-                "note": None
-            }
-        
-        # Normalize concern names
-        normalized_concerns = [c.lower().strip() for c in concerns]
-        
-        # Get primary concern (first in list)
-        primary_concern = normalized_concerns[0]
-        
-        # Map similar concerns
-        concern_mapping = {
-            "hyperpigmentation": "hyperpigmentation",
-            "dark spots": "hyperpigmentation",
-            "melasma": "hyperpigmentation",
-            "aging": "aging",
-            "fine lines": "aging",
-            "wrinkles": "aging",
-            "dryness": "dryness",
-            "dehydration": "dehydration",
-            "dry": "dryness",
-            "acne": "acne",
-            "breakouts": "acne",
-            "pimples": "acne",
-            "texture": "texture",
-            "uneven texture": "uneven texture",
-            "rough skin": "texture",
-            "milia": "milia",
-            "rosacea": "rosacea",
-            "redness": "rosacea",
-            "enlarged pores": "enlarged pores",
-            "large pores": "enlarged pores"
-        }
-        
-        # Find matching concern in our rules
-        matched_concern = None
-        for concern_variant, concern_key in concern_mapping.items():
-            if concern_variant in primary_concern:
-                matched_concern = concern_key
-                break
-        
-        if not matched_concern:
-            # Fallback to Niacinamide
-            logger.warning(f"Unrecognized concern: {primary_concern}, using default treatment")
-            matched_concern = None
-        
-        # Get concern data
-        if matched_concern:
-            concern_data = self.ingredient_rules.get(matched_concern, {})
-        else:
-            # Default fallback
-            return {
-                "product": "Niacinamide serum",
-                "reason": "Versatile ingredient for overall skin health",
-                "usage": "Apply 2-4 drops after cleansing",
-                "note": None
-            }
-        
-        safe_ingredients = concern_data.get("safe", ["Niacinamide"])
-        avoid_pregnancy = concern_data.get("avoid_pregnancy", [])
-        description = concern_data.get("description", "addressing your skin concerns")
-        usage = concern_data.get("usage", "Apply as directed")
-        note = concern_data.get("note", "")
-        
-        # Select ingredient based on pregnancy status
-        if is_pregnant:
-            # Filter out pregnancy-unsafe ingredients
-            available = [i for i in safe_ingredients if i not in avoid_pregnancy]
-            
-            if not available:
-                # Use pregnancy safe alternative if specified
-                alternative = concern_data.get("pregnancy_safe_alternative", "Niacinamide")
-                ingredient = alternative
-            else:
-                ingredient = available[0]
-            
-            pregnancy_note = "⚠️ Pregnancy/nursing safe formula"
-        else:
-            ingredient = safe_ingredients[0]
-            pregnancy_note = None
-        
-        # Adjust for time of day
-        if time == "morning" and matched_concern == "aging" and ingredient == "Retinol":
-            # Move retinol to evening only
-            ingredient = "Antioxidant serum (Vitamin C or E)"
-            usage = "Apply in the morning for daytime protection"
-        
-        return {
-            "product": f"{ingredient} serum/treatment",
-            "reason": f"Targets {primary_concern} by {description}",
-            "usage": usage,
-            "note": pregnancy_note,
-            "additional_note": note if note else None
-        }
-    
-    def _get_moisturizer(self, skin_type: str, is_night: bool) -> Dict:
-        """Select appropriate moisturizer"""
-        moisturizer_data = self.skin_type_products["moisturizer"].get(
-            skin_type.lower(),
-            self.skin_type_products["moisturizer"]["normal"]
-        )
-        
-        time = "evening" if is_night else "morning"
-        
-        return {
-            "product": moisturizer_data[time],
-            "reason": moisturizer_data["reason"]
-        }
-    
-    def _get_sunscreen(self, sun_exposure: str, skin_type: str) -> Dict:
-        """Select appropriate sunscreen based on sun exposure"""
-        exposure = sun_exposure.lower() if sun_exposure else "moderate"
-        spf_data = self.spf_rules.get(exposure, self.spf_rules["moderate"])
-        
-        # Get texture recommendation
-        texture = self.skin_type_products["sunscreen_texture"].get(
-            skin_type.lower(),
-            self.skin_type_products["sunscreen_texture"]["normal"]
-        )
-        
-        return {
-            "product": f"{spf_data['spf']} sunscreen - {texture}",
-            "reason": "Essential protection against sun damage, premature aging, and skin cancer",
-            "usage": spf_data["reapply"],
-            "note": spf_data["notes"]
-        }
-    
-    def _get_usage_instructions(self, context: ConversationContext) -> Dict:
-        """Get special usage instructions"""
-        instructions = {
-            "introduction": "Start with one new product at a time, waiting 1-2 weeks before adding the next",
-            "patch_test": "Always patch test new products on your inner arm for 24 hours first",
-            "frequency": "Start treatments 2-3 times per week, gradually increasing as your skin tolerates",
-            "order": "Apply products from thinnest to thickest consistency",
-            "consistency": "Give your routine 4-6 weeks to show visible results"
-        }
-        
-        # Add pregnancy note if applicable
+        # Pregnancy notes
         if context.health_info.is_pregnant or context.health_info.is_nursing:
-            instructions["pregnancy_note"] = (
+            notes.append(
                 "⚠️ All recommendations are pregnancy/nursing safe. "
-                "Avoid retinoids, high-concentration acids, and hydroquinone."
+                "We've avoided retinoids, hydroquinone, and high-concentration acids"
             )
         
-        # Add medication warnings if applicable
+        # Medication notes
         if context.health_info.medications:
-            instructions["medication_note"] = (
-                "⚠️ You mentioned using medications. Please check with your doctor "
-                "before starting new skincare products to avoid interactions."
+            notes.append(
+                "💊 You mentioned medications - please consult your doctor "
+                "before starting new skincare actives"
             )
         
-        # Add allergy warnings if applicable
+        # Allergy notes
         if context.health_info.allergies:
-            instructions["allergy_note"] = (
-                f"⚠️ You mentioned allergies to: {', '.join(context.health_info.allergies)}. "
-                "Always read ingredient lists carefully and avoid these ingredients."
+            allergies_str = ", ".join(context.health_info.allergies)
+            notes.append(
+                f"🚨 Check ingredient lists carefully to avoid your documented allergies: {allergies_str}"
             )
         
-        return instructions
+        return notes
     
-    def _format_message(self, morning: Dict, evening: Dict, instructions: Dict, language: str = "en") -> str:
-        """Format routine into WhatsApp message"""
-        if language == "he" or language == "hebrew":
-            return self._format_hebrew(morning, evening, instructions)
-        return self._format_english(morning, evening, instructions)
-    
-    def _format_english(self, morning: Dict, evening: Dict, instructions: Dict) -> str:
-        """Format message in English"""
-        msg = "🌟 *Your Personalized Skincare Routine* 🌟\n\n"
-        msg += "Based on your skin profile and concerns, here's your customized routine:\n\n"
+    def _generate_timeline(self, priority_concerns: List[str]) -> List[str]:
+        """Generate realistic timeline expectations"""
+        timelines = []
         
-        # Morning Routine
+        for concern in priority_concerns[:2]:
+            concern_lower = concern.lower()
+            ingredient_info = self.ingredients.get(concern_lower, {})
+            timeline = ingredient_info.get("timeline", "4-8 weeks")
+            
+            timelines.append(f"{concern}: Expect visible results in {timeline}")
+        
+        timelines.append("Consistency is key - give your routine 4-6 weeks minimum")
+        
+        return timelines
+    
+    def _format_recommendations_english(
+        self,
+        recommendations: Dict,
+        context: ConversationContext
+    ) -> str:
+        """Format final recommendations in English - WhatsApp friendly"""
+        msg = "🌟 *Your Personalized Skincare Routine* 🌟\n\n"
+        msg += "_Based on everything you've shared with me:_\n\n"
+        
+        # Morning routine
         msg += "━━━━━━━━━━━━━━━━━━━━\n"
         msg += "☀️ *MORNING ROUTINE*\n"
         msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
         
-        step = 1
-        msg += f"{step}️⃣ *Cleanser*\n"
-        msg += f"   {morning['cleanser']['product']}\n"
-        msg += f"   _{morning['cleanser']['reason']}_\n\n"
-        
-        if morning['treatment']:
-            step += 1
-            msg += f"{step}️⃣ *Treatment*\n"
-            msg += f"   {morning['treatment']['product']}\n"
-            msg += f"   _{morning['treatment']['reason']}_\n"
-            msg += f"   📋 {morning['treatment']['usage']}\n"
-            if morning['treatment'].get('note'):
-                msg += f"   {morning['treatment']['note']}\n"
-            if morning['treatment'].get('additional_note'):
-                msg += f"   💡 {morning['treatment']['additional_note']}\n"
+        for i, step in enumerate(recommendations["morning"], 1):
+            msg += f"{i}️⃣ *{step['step']}*\n"
+            msg += f"   {step['product']}\n"
+            msg += f"   _{step['reason']}_\n"
+            if step.get('usage'):
+                msg += f"   📋 {step['usage']}\n"
+            if step.get('note'):
+                msg += f"   💡 {step['note']}\n"
             msg += "\n"
         
-        step += 1
-        msg += f"{step}️⃣ *Moisturizer*\n"
-        msg += f"   {morning['moisturizer']['product']}\n"
-        msg += f"   _{morning['moisturizer']['reason']}_\n\n"
-        
-        step += 1
-        msg += f"{step}️⃣ *Sunscreen* ☀️\n"
-        msg += f"   {morning['sunscreen']['product']}\n"
-        msg += f"   _{morning['sunscreen']['reason']}_\n"
-        msg += f"   🔁 {morning['sunscreen']['usage']}\n"
-        msg += f"   💡 {morning['sunscreen']['note']}\n\n"
-        
-        # Evening Routine
+        # Evening routine
         msg += "━━━━━━━━━━━━━━━━━━━━\n"
         msg += "🌙 *EVENING ROUTINE*\n"
         msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
         
-        step = 1
-        if evening.get('makeup_removal'):
-            msg += f"{step}️⃣ *Makeup Removal*\n"
-            msg += f"   {evening['makeup_removal']['product']}\n"
-            msg += f"   _{evening['makeup_removal']['reason']}_\n\n"
-            step += 1
-        
-        msg += f"{step}️⃣ *Cleanser*\n"
-        msg += f"   {evening['cleanser']['product']}\n"
-        msg += f"   _{evening['cleanser']['reason']}_\n\n"
-        
-        if evening['treatment']:
-            step += 1
-            msg += f"{step}️⃣ *Treatment*\n"
-            msg += f"   {evening['treatment']['product']}\n"
-            msg += f"   _{evening['treatment']['reason']}_\n"
-            msg += f"   📋 {evening['treatment']['usage']}\n"
-            if evening['treatment'].get('note'):
-                msg += f"   {evening['treatment']['note']}\n"
-            if evening['treatment'].get('additional_note'):
-                msg += f"   💡 {evening['treatment']['additional_note']}\n"
+        for i, step in enumerate(recommendations["evening"], 1):
+            msg += f"{i}️⃣ *{step['step']}*\n"
+            msg += f"   {step['product']}\n"
+            msg += f"   _{step['reason']}_\n"
+            if step.get('usage'):
+                msg += f"   📋 {step['usage']}\n"
+            if step.get('timeline'):
+                msg += f"   ⏰ {step['timeline']}\n"
             msg += "\n"
         
-        step += 1
-        msg += f"{step}️⃣ *Moisturizer*\n"
-        msg += f"   {evening['moisturizer']['product']}\n"
-        msg += f"   _{evening['moisturizer']['reason']}_\n\n"
-        
-        # Important Tips
+        # Important notes
         msg += "━━━━━━━━━━━━━━━━━━━━\n"
-        msg += "⚠️ *IMPORTANT TIPS*\n"
+        msg += "⚠️ *IMPORTANT NOTES*\n"
         msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
         
-        msg += f"1️⃣ {instructions['introduction']}\n\n"
-        msg += f"2️⃣ {instructions['patch_test']}\n\n"
-        msg += f"3️⃣ {instructions['frequency']}\n\n"
-        msg += f"4️⃣ {instructions['order']}\n\n"
+        for i, note in enumerate(recommendations["notes"], 1):
+            msg += f"{i}️⃣ {note}\n\n"
         
-        # Special warnings
-        if instructions.get('pregnancy_note'):
-            msg += f"\n🤰 {instructions['pregnancy_note']}\n"
+        # Timeline
+        msg += "━━━━━━━━━━━━━━━━━━━━\n"
+        msg += "📅 *TIMELINE & EXPECTATIONS*\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
         
-        if instructions.get('medication_note'):
-            msg += f"\n💊 {instructions['medication_note']}\n"
+        for timeline in recommendations["timeline"]:
+            msg += f"• {timeline}\n"
         
-        if instructions.get('allergy_note'):
-            msg += f"\n🚨 {instructions['allergy_note']}\n"
-        
-        msg += f"\n✨ _{instructions['consistency']}_\n"
         msg += "\n━━━━━━━━━━━━━━━━━━━━\n"
-        msg += "💬 *Questions or concerns?* Feel free to ask!\n"
-        msg += "📸 *Track your progress* by taking weekly photos in the same lighting.\n\n"
+        msg += "💬 Questions? Want to adjust anything? Just ask!\n"
+        msg += "📸 Track progress with weekly photos in same lighting\n\n"
         msg += "_Good luck with your skincare journey!_ 🌸"
         
         return msg
     
-    def _format_hebrew(self, morning: Dict, evening: Dict, instructions: Dict) -> str:
-        """Format message in Hebrew"""
+    def _format_recommendations_hebrew(
+        self,
+        recommendations: Dict,
+        context: ConversationContext
+    ) -> str:
+        """Format final recommendations in Hebrew - WhatsApp friendly"""
         msg = "🌟 *שגרת הטיפוח האישית שלך* 🌟\n\n"
-        msg += "על בסיס פרופיל העור והצרכים שלך, הנה השגרה המותאמת במיוחד עבורך:\n\n"
+        msg += "_על בסיס כל מה ששיתפת איתי:_\n\n"
         
-        # Morning Routine
+        # Morning routine
         msg += "━━━━━━━━━━━━━━━━━━━━\n"
         msg += "☀️ *שגרת בוקר*\n"
         msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
         
-        step = 1
-        msg += f"{step}️⃣ *ניקוי*\n"
-        msg += f"   {morning['cleanser']['product']}\n"
-        msg += f"   _{morning['cleanser']['reason']}_\n\n"
-        
-        if morning['treatment']:
-            step += 1
-            msg += f"{step}️⃣ *טיפול*\n"
-            msg += f"   {morning['treatment']['product']}\n"
-            msg += f"   _{morning['treatment']['reason']}_\n"
-            msg += f"   📋 {morning['treatment']['usage']}\n"
-            if morning['treatment'].get('note'):
-                msg += f"   {morning['treatment']['note']}\n"
-            if morning['treatment'].get('additional_note'):
-                msg += f"   💡 {morning['treatment']['additional_note']}\n"
+        for i, step in enumerate(recommendations["morning"], 1):
+            msg += f"{i}️⃣ *{self._translate_step(step['step'])}*\n"
+            msg += f"   {step['product']}\n"
+            msg += f"   _{step['reason']}_\n"
+            if step.get('usage'):
+                msg += f"   📋 {step['usage']}\n"
+            if step.get('note'):
+                msg += f"   💡 {step['note']}\n"
             msg += "\n"
         
-        step += 1
-        msg += f"{step}️⃣ *לחות*\n"
-        msg += f"   {morning['moisturizer']['product']}\n"
-        msg += f"   _{morning['moisturizer']['reason']}_\n\n"
-        
-        step += 1
-        msg += f"{step}️⃣ *הגנה מהשמש* ☀️\n"
-        msg += f"   {morning['sunscreen']['product']}\n"
-        msg += f"   _{morning['sunscreen']['reason']}_\n"
-        msg += f"   🔁 {morning['sunscreen']['usage']}\n"
-        msg += f"   💡 {morning['sunscreen']['note']}\n\n"
-        
-        # Evening Routine
+        # Evening routine
         msg += "━━━━━━━━━━━━━━━━━━━━\n"
         msg += "🌙 *שגרת ערב*\n"
         msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
         
-        step = 1
-        if evening.get('makeup_removal'):
-            msg += f"{step}️⃣ *הסרת איפור*\n"
-            msg += f"   {evening['makeup_removal']['product']}\n"
-            msg += f"   _{evening['makeup_removal']['reason']}_\n\n"
-            step += 1
-        
-        msg += f"{step}️⃣ *ניקוי*\n"
-        msg += f"   {evening['cleanser']['product']}\n"
-        msg += f"   _{evening['cleanser']['reason']}_\n\n"
-        
-        if evening['treatment']:
-            step += 1
-            msg += f"{step}️⃣ *טיפול*\n"
-            msg += f"   {evening['treatment']['product']}\n"
-            msg += f"   _{evening['treatment']['reason']}_\n"
-            msg += f"   📋 {evening['treatment']['usage']}\n"
-            if evening['treatment'].get('note'):
-                msg += f"   {evening['treatment']['note']}\n"
-            if evening['treatment'].get('additional_note'):
-                msg += f"   💡 {evening['treatment']['additional_note']}\n"
+        for i, step in enumerate(recommendations["evening"], 1):
+            msg += f"{i}️⃣ *{self._translate_step(step['step'])}*\n"
+            msg += f"   {step['product']}\n"
+            msg += f"   _{step['reason']}_\n"
+            if step.get('usage'):
+                msg += f"   📋 {step['usage']}\n"
+            if step.get('timeline'):
+                msg += f"   ⏰ {step['timeline']}\n"
             msg += "\n"
         
-        step += 1
-        msg += f"{step}️⃣ *לחות*\n"
-        msg += f"   {evening['moisturizer']['product']}\n"
-        msg += f"   _{evening['moisturizer']['reason']}_\n\n"
-        
-        # Important Tips
+        # Important notes
         msg += "━━━━━━━━━━━━━━━━━━━━\n"
-        msg += "⚠️ *טיפים חשובים*\n"
+        msg += "⚠️ *הערות חשובות*\n"
         msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
         
-        msg += "1️⃣ התחילי מוצר אחד בכל פעם, המתיני 1-2 שבועות לפני הוספת המוצר הבא\n\n"
-        msg += "2️⃣ תמיד עשי בדיקת רגישות למוצרים חדשים על האמה הפנימית למשך 24 שעות\n\n"
-        msg += "3️⃣ התחילי טיפולים 2-3 פעמים בשבוע, והגבירי בהדרגה\n\n"
-        msg += "4️⃣ מרחי מוצרים מהדקים לעבים ביותר\n\n"
+        for i, note in enumerate(recommendations["notes"], 1):
+            msg += f"{i}️⃣ {note}\n\n"
         
-        # Special warnings
-        if instructions.get('pregnancy_note'):
-            msg += f"\n🤰 כל ההמלצות בטוחות להריון/הנקה. הימנעי מרטינואידים, חומצות בריכוז גבוה והידרוקינון.\n"
+        # Timeline
+        msg += "━━━━━━━━━━━━━━━━━━━━\n"
+        msg += "📅 *ציר זמן וציפיות*\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
         
-        if instructions.get('medication_note'):
-            msg += f"\n💊 ציינת שימוש בתרופות. אנא התייעצי עם הרופא לפני התחלת מוצרי טיפוח חדשים.\n"
+        for timeline in recommendations["timeline"]:
+            msg += f"• {timeline}\n"
         
-        if instructions.get('allergy_note'):
-            allergies_he = ', '.join(context.health_info.allergies) if hasattr(context, 'health_info') else ''
-            msg += f"\n🚨 ציינת אלרגיות. קראי תמיד את רשימת הרכיבים והימנעי מרכיבים אלה.\n"
-        
-        msg += f"\n✨ _תני לשגרה 4-6 שבועות להראות תוצאות נראות לעין_\n"
         msg += "\n━━━━━━━━━━━━━━━━━━━━\n"
-        msg += "💬 *שאלות או חששות?* אל תהססי לשאול!\n"
-        msg += "📸 *עקבי אחרי ההתקדמות* על ידי צילום שבועי באותו תאורה.\n\n"
-        msg += "_בהצלחה במסע הטיפוח שלך!_ 🌸"
+        msg += "💬 שאלות? רוצה לשנות משהו? רק תגידי!\n"
+        msg += "📸 עקבי אחרי ההתקדמות עם תמונות שבועיות באותה תאורה\n\n"
+        msg += "_בהצלחה במסע הטיפוח!_ 🌸"
         
         return msg
     
-    def _get_error_message(self, language: str) -> str:
-        """Get error message in appropriate language"""
-        if language == "he" or language == "hebrew":
-            return (
-                "מצטערת, נתקלתי בבעיה ביצירת ההמלצות שלך. 😔\n\n"
-                "אנא נסי שוב או פני אלי עם שאלות נוספות!"
-            )
-        return (
-            "Sorry, I encountered an issue generating your recommendations. 😔\n\n"
-            "Please try again or reach out with any questions!"
-        )
+    def _translate_step(self, step: str) -> str:
+        """Translate step name to Hebrew"""
+        translations = {
+            "Cleanser": "ניקוי",
+            "Treatment": "טיפול",
+            "Moisturizer": "לחות",
+            "Sunscreen": "הגנה מהשמש"
+        }
+        return translations.get(step, step)
