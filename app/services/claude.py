@@ -425,7 +425,13 @@ class ClaudeService:
         """
         try:
             logger.info(f"Generating recommendations for user {context.user_id}")
-            recommendations = self.recommendation_engine.generate_routine(context)  # ← Uses correct variable
+            recommendations = self.recommendation_engine.generate_routine(context) 
+            MAX_LENGTH = 1500 
+
+            if len(recommendations) > MAX_LENGTH:
+                logger.warning(f"Recommendations too long ({len(recommendations)} chars), truncating...")
+                # Truncate and add continuation message
+                recommendations = recommendations[:MAX_LENGTH] + "\n\n... (המשך בהודעה הבאה / continued in next message)" # ← Uses correct variable
             logger.info(f"Recommendations generated successfully")
             return recommendations
         except Exception as e:
