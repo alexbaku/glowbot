@@ -200,6 +200,17 @@ class RecommendationEngine:
                     has_current_routine = True
                     logger.info("User has routine text")
             
+            # FALLBACK: Check conversation state - if they've completed the conversation,
+            # they've likely shared routine information even if not stored in routine table
+            if not has_current_routine and hasattr(context, 'state'):
+                state_str = str(context.state)
+                # If in SUMMARY or COMPLETE state, they've been through full conversation
+                if 'SUMMARY' in state_str or 'COMPLETE' in state_str:
+                    has_current_routine = True
+                    logger.info(f"User in {state_str} state - assuming routine discussed in conversation")
+            
+            logger.info(f"Final decision: has_current_routine = {has_current_routine}")
+            
             if has_current_routine:
                 # User already has a routine - give targeted advice
                 logger.info("User has existing routine - generating targeted recommendations")
