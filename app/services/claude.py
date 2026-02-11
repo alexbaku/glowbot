@@ -78,156 +78,230 @@ Be warm, professional, and genuinely interested in helping.
             if "\u0590" <= char <= "\u05FF":
                 return "hebrew"
         return "english"
-    
-    async def get_response(self, db: AsyncSession, phone_number: str, user_input: str) -> str:
+
+    def _clean_message_history(self, raw_messages: List) -> List[Dict]:
         """
-        Main conversation flow with integrated reasoning engine.
+        Clean and prepare message history from database for Claude API.
         
-        Flow:
-        1. Load user context from database
-        2. Let recommendation engine reason about what we know
-        3. If ready for recommendations → generate them
-        4. Otherwise → get next targeted question
-        5. Save everything to database
+        Filters out:
+        - Empty content (None, "", whitespace)
+        - Invalid roles
+        - Duplicate consecutive messages from same role
+        
+        Returns properly formatted messages for Claude API.
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        cleaned = []
+        
+        for idx, msg in enumerate(raw_messages):
+            # Extract role and content (handle both ORM objects and dicts)
+            if hasattr(msg, 'role'):  # ORM object
+                role = msg.role.value if hasattr(msg.role, 'value') else str(msg.role)
+                content = msg.content
+            else:  # Dictionary
+                role = msg.get('role')
+                content = msg.get('content')
+            
+            # Normalize role to lowercase
+            role = role.lower() if role else None
+            
+            # FILTER 1: Skip if no role or content
+            if not role:
+                logger.warning(f"Skipping message {idx}: missing role")
+                continue
+            
+            if content is None:
+                logger.warning(f"Skipping message {idx}: content is None")
+                continue
+            
+            # FILTER 2: Only allow user and assistant roles
+            if role not in ['user', 'assistant']:
+                logger.warning(f"Skipping message {idx}: invalid role '{role}'")
+                continue
+            
+            # FILTER 3: Skip empty strings or whitespace-only content
+            if isinstance(content, str):
+                if not content.strip():
+                    logger.warning(f"Skipping message {idx}: empty or whitespace-only content")
+                    continue
+                
+                # Add valid message
+                cleaned.append({
+                    "role": role,
+                    "content": content.strip()
+                })
+            
+            # FILTER 4: Handle list content (multimodal)
+            elif isinstance(content, list):
+                # Filter out empty text blocks
+                filtered_content = []
+                for item in content:
+                    if isinstance(item, dict):
+                        if item.get('type') == 'text' and item.get('text', '').strip():
+                            filtered_content.append(item)
+                        elif item.get('type') != 'text':
+                            filtered_content.append(item)
+                
+                if filtered_content:
+                    cleaned.append({
+                        "role": role,
+                        "content": filtered_content
+                    })
+                else:
+                    logger.warning(f"Skipping message {idx}: empty content list")
+            
+            else:
+                logger.warning(f"Skipping message {idx}: unexpected content type {type(content)}")
+        
+        # FILTER 5: Remove consecutive messages from the same role
+        final = []
+        last_role = None
+        
+        for msg in cleaned:
+            if msg['role'] != last_role:
+                final.append(msg)
+                last_role = msg['role']
+            else:
+                logger.warning(f"Skipping consecutive {msg['role']} message")
+        
+        # FILTER 6: Ensure conversation starts with user
+        if final and final[0]['role'] != 'user':
+            logger.warning(f"Removing leading {final[0]['role']} message")
+            final = final[1:]
+        
+        logger.info(f"Cleaned message history: {len(raw_messages)} -> {len(final)} messages")
+        
+        return final
+
+    async def get_response(self, db: AsyncSession, phone_number: str, user_input: str) -> str:
+        """Get a conversational response from Claude with database persistence"""
         try:
             # Get or create user in database
             user = await self.user_repo.get_or_create(db, phone_number)
             
-            # Load conversation context
+            # Load context from database
             context = await self.conversation_repo.load_context(
                 db=db,
                 user_id=user.id,
                 phone_number=phone_number
             )
             
-            # Detect language
-            language = self._detect_language(user_input)
-            context.language = language
-            
-            # Save user message
+            # Save user message to database
             await self.conversation_repo.add_user_message(
                 db=db,
                 user_id=user.id,
                 content=user_input
             )
             
-            # Get message history
-            message_history = await self.conversation_repo.get_message_history(
+            # Get message history from database
+            raw_history = await self.conversation_repo.get_message_history(
                 db=db,
                 user_id=user.id,
                 limit=50
             )
             
-            logger.error("="*80)
-            logger.error(f"DEBUG: Total messages = {len(message_history)}")
-
-            for idx, msg in enumerate(message_history):
-                content = msg.get('content')
-                logger.error(
-                    f"[{idx}] role={msg.get('role')}, "
-                    f"content_type={type(content)}, "
-                    f"content_len={len(str(content)) if content else 0}"
-                )
-                
-                # Focus on the problem message
-                if idx == 6:
-                    import json
-                    logger.error(f"MESSAGE 6 DETAIL:")
-                    logger.error(json.dumps(msg, indent=2, default=str))
-
-            logger.error("="*80)
+            # 🔥 CRITICAL: Clean the message history 🔥
+            message_history = self._clean_message_history(raw_history)
+            
             # Add current message
             message_history.append({
                 "role": "user",
                 "content": user_input
             })
             
-            # === REASONING PHASE ===
-            # Let the recommendation engine analyze what we know
-            reasoning_state = self.recommendation_engine.reason_about_user(context)
+            # DEBUG: Log the cleaned history
+            logger.info(f"Sending {len(message_history)} messages to Claude")
+            for idx, msg in enumerate(message_history):
+                logger.debug(f"[{idx}] role={msg['role']}, content_len={len(str(msg['content']))}")
             
-            logger.info(
-                f"Reasoning state: confidence={reasoning_state.confidence_level}, "
-                f"missing_critical={len(reasoning_state.missing_critical)}, "
-                f"safety_flags={len(reasoning_state.safety_flags)}"
+            # Detect language
+            language = self._detect_language(user_input)
+
+            # Build system prompt
+            full_system_prompt = (
+                self.base_system_prompt + 
+                self._get_state_specific_prompt(context.state)
             )
             
-            # === DECISION POINT ===
-            # Check if user is asking for recommendations
-            user_input_lower = user_input.lower()
-            wants_recommendations = any(word in user_input_lower for word in [
-                'recommend', 'routine', 'products', 'suggest', 'go ahead', 
-                'yes', 'sure', 'ok', 'ready', 'המלצ', 'שגרת', 'מוצר', 
-                'כן', 'בטח', 'נכון', 'correct'
-            ])
+            context_section = f"""
+    CURRENT CONVERSATION STATE: {context.state}
+
+    INFORMATION COLLECTED SO FAR:
+    - Skin Profile: {context.skin_profile.model_dump_json()}
+    - Health Info: {context.health_info.model_dump_json()}
+    - Current Routine: {context.routine.model_dump_json()}
+    - Preferences: {context.preferences.model_dump_json()}
+
+    Based on the current state and information collected, ask the appropriate question to gather missing information.
+    In your response, include ALL new information you collect in the collected_info field.
+    """
+            full_system_prompt += context_section
             
-            # Can we recommend?
-            ready_to_recommend = reasoning_state.is_ready_for_recommendation()
+            # Get reasoning state
+            reasoning_state = self.recommendation_engine.reason_about_user(context)
+            logger.info(f"Reasoning state: confidence={reasoning_state.confidence_level}, "
+                    f"missing_critical={len(reasoning_state.missing_critical)}, "
+                    f"safety_flags={len(reasoning_state.safety_flags)}")
             
-            if wants_recommendations and ready_to_recommend:
-                # === GENERATE RECOMMENDATIONS ===
-                logger.info("🎯 User wants recommendations and we have enough data")
-                
-                recommendations = self.recommendation_engine.generate_recommendations(
-                    context=context,
-                    state=reasoning_state
+            # Try to get response from Claude
+            try:
+                response = await self.client.messages.create(
+                    model=self.MODEL,
+                    max_tokens=1024,
+                    messages=message_history,  # Using cleaned history
+                    tools=[{
+                        "name": "output",
+                        "input_schema": InterviewMessage.model_json_schema(),
+                    }],
+                    tool_choice={"name": "output", "type": "tool"},
+                    system=full_system_prompt,
                 )
                 
-                # Save and return
-                await self._save_response(db, user.id, recommendations, context)
-                context.state = ConversationState.COMPLETE
+                # Process the structured response
+                assert response.content[0].type == "tool_use"
+                assistant_message = response.content[0].input
+                resp = InterviewMessage.model_validate(assistant_message)
                 
-                logger.info(f"✅ Recommendations sent to user {phone_number}")
-                return recommendations
+                # Update the conversation context
+                self._update_context_from_response(context, resp)
+                
+                response_text = resp.message
+                
+            except Exception as e:
+                logger.error(f"Error calling Claude API: {str(e)}")
+                # Fallback: Use recommendation engine directly
+                if reasoning_state.is_ready_for_recommendation():
+                    response_text = self.recommendation_engine.generate_recommendations(context, reasoning_state)
+                else:
+                    response_text = self.recommendation_engine.generate_next_question(context, reasoning_state)
             
-            elif wants_recommendations and not ready_to_recommend:
-                # === USER WANTS RECS BUT WE'RE NOT READY ===
-                logger.info("User wants recommendations but data insufficient")
-                
-                # Generate adaptive follow-up
-                follow_up = self.recommendation_engine.generate_next_question(
-                    context=context,
-                    state=reasoning_state
-                )
-                
-                await self._save_response(db, user.id, follow_up, context)
-                return follow_up
+            # Save assistant message to database
+            await self.conversation_repo.add_assistant_message(
+                db=db,
+                user_id=user.id,
+                content=response_text
+            )
             
-            else:
-                # === CONTINUE DATA COLLECTION ===
-                # Use Claude to process the response and collect data
-                response = await self._get_claude_data_collection(
-                    message_history=message_history,
-                    context=context,
-                    reasoning_state=reasoning_state
-                )
-                
-                # Update context with collected info
-                if response.collected_info:
-                    context.update(response.collected_info)
-                
-                # Progress state
-                self._update_context_from_response(context, response)
-                
-                # Save to database
-                await self._save_response(db, user.id, response.message, context)
-                
-                logger.info(
-                    f"User: {phone_number} | State: {context.state} | "
-                    f"Action: {response.action} | Confidence: {reasoning_state.confidence_level}"
-                )
-                
-                return response.message
+            # Save updated context to database
+            await self.conversation_repo.save_context(
+                db=db,
+                user_id=user.id,
+                context=context
+            )
+            
+            # Log state transition
+            logger.info(
+                f"User: {phone_number} (ID: {user.id}) | "
+                f"State: {context.state}"
+            )
+            
+            return response_text
         
         except Exception as e:
             logger.error(f"Error in get_response: {str(e)}", exc_info=True)
-            
-            # Graceful error in user's language
-            language = self._detect_language(user_input)
-            if language == "hebrew":
-                return "סליחה, נתקלתי בבעיה. אפשר לנסות שוב?"
-            return "I apologize, I encountered an issue. Could you try again?"
+            return "I apologize, but I'm having trouble responding. Could you try again?"
     
     async def _get_claude_data_collection(
         self,
