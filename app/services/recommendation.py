@@ -183,11 +183,22 @@ class RecommendationEngine:
             logger.info(f"Pregnant: {context.health_info.is_pregnant}, Nursing: {context.health_info.is_nursing}")
             
             # Check if user has shared their current routine
-            has_current_routine = bool(
-                context.routine.morning or 
-                context.routine.evening or 
-                context.routine.products
-            )
+            # context.routine is likely a list of UserRoutine objects
+            has_current_routine = False
+            
+            if context.routine:
+                # Check if it's a list/collection with items
+                if isinstance(context.routine, (list, tuple)) and len(context.routine) > 0:
+                    has_current_routine = True
+                    logger.info(f"User has {len(context.routine)} routine steps")
+                # Or if it's a single object with a product
+                elif hasattr(context.routine, 'product') and context.routine.product:
+                    has_current_routine = True
+                    logger.info(f"User has routine step: {context.routine.step}")
+                # Or check for any string attributes with content
+                elif isinstance(context.routine, str) and len(context.routine) > 0:
+                    has_current_routine = True
+                    logger.info("User has routine text")
             
             if has_current_routine:
                 # User already has a routine - give targeted advice
