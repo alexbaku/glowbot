@@ -174,9 +174,9 @@ The consultation is complete. Thank the user for providing their information and
 you'll create a personalized skincare routine based on what they've shared.
 Always set action to "done".
 """,
-    }
-    
-    return state_prompts.get(state, "")
+        }
+        
+        return state_prompts.get(state, "")
 
 
     def _clean_message_history(self, raw_messages: List) -> List[Dict]:
