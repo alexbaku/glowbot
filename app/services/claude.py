@@ -119,6 +119,24 @@ Be warm, professional, and genuinely interested in helping.
                 limit=50
             )
             
+            logger.error("="*80)
+            logger.error(f"DEBUG: Total messages = {len(message_history)}")
+
+            for idx, msg in enumerate(message_history):
+                content = msg.get('content')
+                logger.error(
+                    f"[{idx}] role={msg.get('role')}, "
+                    f"content_type={type(content)}, "
+                    f"content_len={len(str(content)) if content else 0}"
+                )
+                
+                # Focus on the problem message
+                if idx == 6:
+                    import json
+                    logger.error(f"MESSAGE 6 DETAIL:")
+                    logger.error(json.dumps(msg, indent=2, default=str))
+
+            logger.error("="*80)
             # Add current message
             message_history.append({
                 "role": "user",
