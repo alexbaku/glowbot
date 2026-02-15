@@ -187,7 +187,7 @@ class CredibleProgressiveEngine:
     
     def __init__(self):
         # Import existing knowledge base
-        from app.recommendation import RecommendationEngine
+        from app.services.recommendation import RecommendationEngine
         base_engine = RecommendationEngine()
         self.contraindications = base_engine.contraindications
         self.ingredients = base_engine.ingredients
