@@ -34,8 +34,7 @@ class ReasoningState:
         # Must have high confidence and no critical gaps or safety flags
         return (
             self.confidence_level == "high" and 
-            len(self.missing_critical) == 0 and
-
+            len(self.missing_critical) == 0
         )
     
     def get_next_question_priority(self) -> Optional[DataGap]:
