@@ -278,126 +278,85 @@ Always set action to "done".
         return final
 
     async def get_response(
-        self, db: AsyncSession, phone_number: str, user_input: str
+        self,
+        phone_number: str,
+        user_message: str,
+        db: AsyncSession
     ) -> str:
-        """Get a conversational response from Claude with database persistence"""
+        """
+        Process user message and generate response.
+        Uses credible progressive engine - NO MORE DEADLOCK.
+        """
         try:
-            # Get or create user in database
-            user = await self.user_repo.get_or_create(db, phone_number)
-
-            # Load context from database
-            context = await self.conversation_repo.load_context(
-                db=db, user_id=user.id, phone_number=phone_number
+            # Get or create user
+            user = await self.user_repo.get_or_create(
+                db=db,
+                phone_number=phone_number
             )
 
             # Save user message to database
             await self.conversation_repo.add_user_message(
-                db=db, user_id=user.id, content=user_input
+                db=db,
+                user_id=user.id,
+                content=user_message
             )
 
-            # Get message history from database
-            raw_history = await self.conversation_repo.get_message_history(
-                db=db, user_id=user.id, limit=50
+            # Load conversation context
+            context = await self.conversation_repo.load_context(
+                db=db,
+                user_id=user.id,
+                phone_number=phone_number
             )
-
-            # 🔥 CRITICAL: Clean the message history 🔥
-            message_history = self._clean_message_history(raw_history)
-
-            # Add current message
-            message_history.append({"role": "user", "content": user_input})
-
-            # DEBUG: Log the cleaned history
-            logger.info(f"Sending {len(message_history)} messages to Claude")
-            for idx, msg in enumerate(message_history):
-                logger.debug(
-                    f"[{idx}] role={msg['role']}, content_len={len(str(msg['content']))}"
-                )
 
             # Detect language
-            language = self._detect_language(user_input)
+            detected_lang = self._detect_language(user_message)
+            if detected_lang:
+                context.language = detected_lang
 
-            # Build system prompt
-            full_system_prompt = (
-                self.base_system_prompt + self._get_state_specific_prompt(context.state)
-            )
-
-            context_section = f"""
-    CURRENT CONVERSATION STATE: {context.state}
-
-    INFORMATION COLLECTED SO FAR:
-    - Skin Profile: {context.skin_profile.model_dump_json()}
-    - Health Info: {context.health_info.model_dump_json()}
-    - Current Routine: {context.routine.model_dump_json()}
-    - Preferences: {context.preferences.model_dump_json()}
-
-    Based on the current state and information collected, ask the appropriate question to gather missing information.
-    In your response, include ALL new information you collect in the collected_info field.
-    """
-            full_system_prompt += context_section
-
-            # Get recommendation readiness
-            readiness = self.recommendation_engine.assess_readiness(context, user_input)
-            logger.info(
-                f"Readiness: confidence={readiness.confidence_score}% ({readiness.level.value}), "
-                f"can_recommend={readiness.can_recommend}, "
-                f"critical_missing={len(readiness.critical_missing)}"
-            )
-
-            # Try to get response from Claude
+            # ================================================================
+            # Use credible progressive engine
+            # ================================================================
             try:
-                response = await self.client.messages.create(
-                    model=self.MODEL,
-                    max_tokens=1024,
-                    messages=message_history,  # Using cleaned history
-                    tools=[
-                        {
-                            "name": "output",
-                            "input_schema": InterviewMessage.model_json_schema(),
-                        }
-                    ],
-                    tool_choice={"name": "output", "type": "tool"},
-                    system=full_system_prompt,
+                response_text = self.recommendation_engine.generate_response(
+                    context=context,
+                    user_message=user_message
                 )
 
-                # Process the structured response
-                assert response.content[0].type == "tool_use"
-                assistant_message = response.content[0].input
-                resp = InterviewMessage.model_validate(assistant_message)
+                # Log confidence
+                confidence_score = self.recommendation_engine._calculate_confidence_score(context)
 
-                # Update the conversation context
-                self._update_context_from_response(context, resp)
-
-                response_text = resp.message
+                logger.info(
+                    f"Generated response | "
+                    f"User: {phone_number} | "
+                    f"Confidence: {confidence_score}%"
+                )
 
             except Exception as e:
-                logger.error(f"Error calling Claude API: {str(e)}")
-                # Fallback: Use recommendation engine directly
-                response_text = self.recommendation_engine.generate_response(
-                    context, user_input
-                )
+                logger.error(f"Error generating response: {str(e)}", exc_info=True)
+                response_text = "I apologize, but I'm having trouble. Could you try again?"
+            # ================================================================
 
             # Save assistant message to database
             await self.conversation_repo.add_assistant_message(
-                db=db, user_id=user.id, content=response_text
+                db=db,
+                user_id=user.id,
+                content=response_text
             )
 
             # Save updated context to database
             await self.conversation_repo.save_context(
-                db=db, user_id=user.id, context=context
+                db=db,
+                user_id=user.id,
+                context=context
             )
 
-            # Log state transition
-            logger.info(
-                f"User: {phone_number} (ID: {user.id}) | State: {context.state}"
-            )
+            logger.info(f"Response completed | User: {phone_number} (ID: {user.id})")
 
             return response_text
 
         except Exception as e:
             logger.error(f"Error in get_response: {str(e)}", exc_info=True)
-            return (
-                "I apologize, but I'm having trouble responding. Could you try again?"
-            )
+            return "I apologize, but I'm having trouble responding. Could you try again?"
 
     async def _get_claude_data_collection(
         self, message_history: List[Dict], context: ConversationContext, readiness: Any

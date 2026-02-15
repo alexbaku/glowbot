@@ -88,9 +88,9 @@ async def whatsapp_webhook(
         
         # Pass database session
         response = await claude_service.get_response(
-            db=db,              # ADD THIS
-            phone_number=phone_number,  # Use phone_number
-            user_input=user_message
+            phone_number=phone_number,
+            user_message=user_message,
+            db=db
         )
         
         await whatsapp_service.send_message(
