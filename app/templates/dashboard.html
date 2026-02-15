@@ -91,6 +91,11 @@
             font-weight: bold;
             color: #667eea;
             font-size: 1.2em;
+        }
+
+        .user-phone {
+            color: #999;
+            font-size: 0.9em;
             margin-bottom: 10px;
         }
 
@@ -139,31 +144,42 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🌟 GlowBot Dashboard</h1>
+            <h1>GlowBot Dashboard</h1>
             <p>Monitor your skincare consultations</p>
 
             <div class="stats">
                 <div class="stat-card">
                     <h3>{{ total_users }}</h3>
-                    <p>Total Conversations</p>
+                    <p>Total Users</p>
+                </div>
+                <div class="stat-card">
+                    <h3>{{ active_conversations }}</h3>
+                    <p>Active Conversations</p>
+                </div>
+                <div class="stat-card">
+                    <h3>{{ completed_conversations }}</h3>
+                    <p>Completed Consultations</p>
                 </div>
             </div>
         </div>
 
         <div class="conversations">
-            <h2>Active Conversations</h2>
+            <h2>All Users</h2>
 
             {% if conversations %}
             {% for conv in conversations %}
             <div class="conversation-card" onclick="window.location.href='/dashboard/user/{{ conv.user_id }}'">
-                <div class="user-id">👤 {{ conv.user_id }}</div>
+                <div class="user-id">{{ conv.profile_name or conv.user_id }}</div>
+                {% if conv.profile_name %}
+                <div class="user-phone">{{ conv.user_id }}</div>
+                {% endif %}
 
                 <div>
-                    <span class="badge badge-state">{{ conv.state }}</span>
+                    <span class="badge badge-state">{{ conv.state|replace('_', ' ')|title }}</span>
                     <span class="badge badge-language">{{ conv.language|upper }}</span>
 
                     {% if conv.skin_type != "Unknown" %}
-                    <span class="badge badge-skin">{{ conv.skin_type }}</span>
+                    <span class="badge badge-skin">{{ conv.skin_type|title }}</span>
                     {% endif %}
 
                     {% for concern in conv.concerns %}
