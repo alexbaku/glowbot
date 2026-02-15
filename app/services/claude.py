@@ -14,7 +14,7 @@ from anthropic.types import MessageParam
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories import get_conversation_repository, get_user_repository
 from app.config import Settings
-from app.services.new_recommendation import 
+from app.services.new_recommendation import CredibleProgressiveEngine
 from app.models.conversation_schemas import (
     ConversationContext,
     ConversationState,
