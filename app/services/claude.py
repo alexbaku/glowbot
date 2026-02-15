@@ -278,10 +278,7 @@ Always set action to "done".
         return final
 
     async def get_response(
-        self,
-        phone_number: str,
-        user_message: str,
-        db: AsyncSession
+        self, phone_number: str, user_message: str, db: AsyncSession
     ) -> str:
         """
         Process user message and generate response.
@@ -289,23 +286,16 @@ Always set action to "done".
         """
         try:
             # Get or create user
-            user = await self.user_repo.get_or_create(
-                db=db,
-                phone_number=phone_number
-            )
+            user = await self.user_repo.get_or_create(db=db, phone_number=phone_number)
 
             # Save user message to database
             await self.conversation_repo.add_user_message(
-                db=db,
-                user_id=user.id,
-                content=user_message
+                db=db, user_id=user.id, content=user_message
             )
 
             # Load conversation context
             context = await self.conversation_repo.load_context(
-                db=db,
-                user_id=user.id,
-                phone_number=phone_number
+                db=db, user_id=user.id, phone_number=phone_number
             )
 
             # Detect language
@@ -318,12 +308,27 @@ Always set action to "done".
             # ================================================================
             try:
                 response_text = self.recommendation_engine.generate_response(
-                    context=context,
-                    user_message=user_message
+                    context=context, user_message=user_message
+                )
+
+                MAX_LENGTH = 1500
+                if len(response_text) > MAX_LENGTH:
+                    logger.warning(
+                        f"Response too long ({len(response_text)} chars), truncating..."
+                    )
+                    response_text = (
+                        response_text[:MAX_LENGTH]
+                        + "\n\n_(Message truncated - ask for specific sections!)_"
+                    )
+
+                logger.info(
+                    f"Response | Length: {len(response_text)} | User: {phone_number}"
                 )
 
                 # Log confidence
-                confidence_score = self.recommendation_engine._calculate_confidence_score(context)
+                confidence_score = (
+                    self.recommendation_engine._calculate_confidence_score(context)
+                )
 
                 logger.info(
                     f"Generated response | "
@@ -333,21 +338,19 @@ Always set action to "done".
 
             except Exception as e:
                 logger.error(f"Error generating response: {str(e)}", exc_info=True)
-                response_text = "I apologize, but I'm having trouble. Could you try again?"
+                response_text = (
+                    "I apologize, but I'm having trouble. Could you try again?"
+                )
             # ================================================================
 
             # Save assistant message to database
             await self.conversation_repo.add_assistant_message(
-                db=db,
-                user_id=user.id,
-                content=response_text
+                db=db, user_id=user.id, content=response_text
             )
 
             # Save updated context to database
             await self.conversation_repo.save_context(
-                db=db,
-                user_id=user.id,
-                context=context
+                db=db, user_id=user.id, context=context
             )
 
             logger.info(f"Response completed | User: {phone_number} (ID: {user.id})")
@@ -356,7 +359,9 @@ Always set action to "done".
 
         except Exception as e:
             logger.error(f"Error in get_response: {str(e)}", exc_info=True)
-            return "I apologize, but I'm having trouble responding. Could you try again?"
+            return (
+                "I apologize, but I'm having trouble responding. Could you try again?"
+            )
 
     async def _get_claude_data_collection(
         self, message_history: List[Dict], context: ConversationContext, readiness: Any
