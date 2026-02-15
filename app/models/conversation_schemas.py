@@ -60,6 +60,7 @@ class SkinProfile(BaseModel):
     skin_type: Optional[str] = None  # dry, oily, combination, normal
     concerns: List[str] = []  # hyperpigmentation, aging, acne, etc.
     sun_exposure: Optional[str] = None  # minimal, moderate, high
+    climate: Optional[str] = None  # humid, dry, temperate, cold
 
 class UserRoutine(BaseModel):
     """User's current skincare routine"""
