@@ -41,9 +41,9 @@ class ClaudeService:
         self.user_repo = get_user_repository()
         self.MODEL = "claude-sonnet-4-5-20250929"
         
-        # Initialize the reasoning-based recommendation engine
-        self.recommendation_engine = RecommendationEngine()
-        logger.info("Reasoning-based recommendation engine initialized")
+        # Initialize the credible progressive recommendation engine
+        self.recommendation_engine = CredibleProgressiveEngine()
+        logger.info("Credible progressive recommendation engine initialized")
         
         # Simplified base prompt - less prescriptive, more natural
         self.base_system_prompt = """You are Glowbot, a smart skincare consultant helping users build personalized routines.
@@ -339,11 +339,11 @@ Always set action to "done".
     """
             full_system_prompt += context_section
             
-            # Get reasoning state
-            reasoning_state = self.recommendation_engine.reason_about_user(context)
-            logger.info(f"Reasoning state: confidence={reasoning_state.confidence_level}, "
-                    f"missing_critical={len(reasoning_state.missing_critical)}, "
-                    f"safety_flags={len(reasoning_state.safety_flags)}")
+            # Get recommendation readiness
+            readiness = self.recommendation_engine.assess_readiness(context, user_input)
+            logger.info(f"Readiness: confidence={readiness.confidence_score}% ({readiness.level.value}), "
+                    f"can_recommend={readiness.can_recommend}, "
+                    f"critical_missing={len(readiness.critical_missing)}")
             
             # Try to get response from Claude
             try:
@@ -372,10 +372,7 @@ Always set action to "done".
             except Exception as e:
                 logger.error(f"Error calling Claude API: {str(e)}")
                 # Fallback: Use recommendation engine directly
-                if reasoning_state.is_ready_for_recommendation():
-                    response_text = self.recommendation_engine.generate_recommendations(context, reasoning_state)
-                else:
-                    response_text = self.recommendation_engine.generate_next_question(context, reasoning_state)
+                response_text = self.recommendation_engine.generate_response(context, user_input)
             
             # Save assistant message to database
             await self.conversation_repo.add_assistant_message(
@@ -407,20 +404,22 @@ Always set action to "done".
         self,
         message_history: List[Dict],
         context: ConversationContext,
-        reasoning_state: Any
+        readiness: Any
     ) -> InterviewMessage:
         """
         Use Claude to naturally collect data and respond.
-        
+
         The recommendation engine handles reasoning and follow-ups.
         Claude handles natural conversation and data extraction.
         """
-        
+
         # Build context-aware prompt
         context_info = {
-            "known_facts": reasoning_state.known_facts,
-            "missing_critical": [gap.value for gap in reasoning_state.missing_critical],
-            "confidence": reasoning_state.confidence_level,
+            "known_facts": readiness.known_facts,
+            "critical_missing": readiness.critical_missing,
+            "confidence_score": readiness.confidence_score,
+            "confidence_level": readiness.level.value,
+            "can_recommend": readiness.can_recommend,
             "current_data": {
                 "skin_type": context.skin_profile.skin_type,
                 "concerns": context.skin_profile.concerns,
