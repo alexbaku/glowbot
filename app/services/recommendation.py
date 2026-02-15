@@ -35,7 +35,7 @@ class ReasoningState:
         return (
             self.confidence_level == "high" and 
             len(self.missing_critical) == 0 and
-            len(self.safety_flags) == 0
+
         )
     
     def get_next_question_priority(self) -> Optional[DataGap]:
@@ -360,8 +360,9 @@ class RecommendationEngine:
             gaps.append(DataGap.CURRENT_ROUTINE_INCOMPLETE)
         
         # Budget undefined (impacts recommendations)
-        if not context.preferences.budget_range:
-            gaps.append(DataGap.BUDGET_UNDEFINED)
+        # We can give multi-tier recommendations without it
+        #if not context.preferences.budget_range:
+        #    gaps.append(DataGap.BUDGET_UNDEFINED)
         
         return gaps
     
@@ -732,31 +733,47 @@ class RecommendationEngine:
         
         return products if products else ["None mentioned"]
     
+
     def generate_recommendations(
         self,
         context: ConversationContext,
-        state: ReasoningState
+        state: ReasoningState,
+        user_message: str = ""
     ) -> str:
-        """
-        Generate final recommendations with full traceability.
-        
-        CRITICAL: Every recommendation must explicitly reference user inputs.
-        """
+        """Generate final recommendations"""
         language = context.language
         
-        # Safety check
-        if not state.is_ready_for_recommendation():
-            logger.warning("Attempted to generate recommendations without sufficient data")
+        # Simple heuristic: If we have skin type + concerns, we can generate SOMETHING
+        has_basics = (
+            context.skin_profile.skin_type and 
+            len(context.skin_profile.concerns) > 0
+        )
+        
+        # Check if ready
+        ready = state.is_ready_for_recommendation()
+        
+        # If not ready but we have basics, generate anyway
+        if not ready and has_basics:
+            logger.warning(
+                f"⚠️ Not fully ready (confidence={state.confidence_level}, "
+                f"missing={state.missing_critical}) but generating with basics"
+            )
+            # Continue to generate
+        elif not ready and not has_basics:
+            logger.warning("❌ Not enough data to generate recommendations")
             return self.generate_next_question(context, state)
+        else:
+            logger.info("✅ Ready for recommendations!")
         
         # Build traceable recommendations
         recommendations = self._build_traceable_routine(context, state)
         
-        # Format for WhatsApp
+        # Format for WhatsApp  
         if language == "hebrew":
             return self._format_recommendations_hebrew(recommendations, context)
         else:
             return self._format_recommendations_english(recommendations, context)
+
     
     def _build_traceable_routine(
         self,
