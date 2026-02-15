@@ -1,399 +1,164 @@
+import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.database import get_db
+from app.models.conversation import Message
+from app.models.health_info import UserHealthInfo
+from app.models.routine import RoutineTime
+from app.models.user import SkinType, User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["dashboard"])
 template_dir = Path(__file__).parent / "templates"
-print(f"📁 Template directory: {template_dir}")
-print(f"✓ Exists: {template_dir.exists()}")
-
-if template_dir.exists():
-    print(f"📄 Files in templates: {list(template_dir.iterdir())}")
-
 templates = Jinja2Templates(directory=str(template_dir))
 
-@router.get("/")
-def dashboard_home():
-    # Get conversation data
-    from app.main import claude_service
-    
-    conversations = []
-    return {
-    "message": "Dashboard migrated to database - update in progress",
-    "status": "ok"
-}
-    
-    total_users = len(conversations)
-    
-    # Build HTML manually (no templates)
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>GlowBot Dashboard</title>
-        <style>
-            * {{
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }}
-            
-            body {{
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                padding: 20px;
-            }}
-            
-            .container {{
-                max-width: 1200px;
-                margin: 0 auto;
-            }}
-            
-            .header {{
-                background: white;
-                padding: 30px;
-                border-radius: 15px;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-                margin-bottom: 30px;
-            }}
-            
-            .header h1 {{
-                color: #667eea;
-                font-size: 2.5em;
-                margin-bottom: 10px;
-            }}
-            
-            .stat-card {{
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 20px;
-                border-radius: 10px;
-                text-align: center;
-                margin-top: 20px;
-            }}
-            
-            .stat-card h3 {{
-                font-size: 2.5em;
-                margin-bottom: 5px;
-            }}
-            
-            .conversations {{
-                background: white;
-                padding: 30px;
-                border-radius: 15px;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            }}
-            
-            .conversation-card {{
-                border: 2px solid #e0e0e0;
-                padding: 20px;
-                border-radius: 10px;
-                margin-bottom: 15px;
-                transition: all 0.3s;
-                cursor: pointer;
-            }}
-            
-            .conversation-card:hover {{
-                border-color: #667eea;
-                box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
-                transform: translateY(-2px);
-            }}
-            
-            .user-id {{
-                font-weight: bold;
-                color: #667eea;
-                font-size: 1.2em;
-                margin-bottom: 10px;
-            }}
-            
-            .badge {{
-                display: inline-block;
-                padding: 5px 12px;
-                border-radius: 20px;
-                font-size: 0.85em;
-                margin-right: 8px;
-                margin-top: 5px;
-            }}
-            
-            .badge-state {{
-                background: #667eea;
-                color: white;
-            }}
-            
-            .badge-language {{
-                background: #f0f0f0;
-                color: #333;
-            }}
-            
-            .badge-skin {{
-                background: #e3f2fd;
-                color: #1976d2;
-            }}
-            
-            .badge-concern {{
-                background: #fff3e0;
-                color: #f57c00;
-            }}
-            
-            .empty-state {{
-                text-align: center;
-                padding: 60px 20px;
-                color: #999;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>🌟 GlowBot Dashboard</h1>
-                <p>Monitor your skincare consultations</p>
-                
-                <div class="stat-card">
-                    <h3>{total_users}</h3>
-                    <p>Total Conversations</p>
-                </div>
-            </div>
-            
-            <div class="conversations">
-                <h2>Active Conversations</h2>
-    """
-    
-    # Add conversation cards
-    if conversations:
-        for conv in conversations:
-            concerns_html = "".join([
-                f'<span class="badge badge-concern">{concern}</span>'
-                for concern in conv['concerns']
-            ])
-            
-            skin_badge = ""
-            if conv['skin_type'] != "Unknown":
-                skin_badge = f'<span class="badge badge-skin">{conv["skin_type"]}</span>'
-            
-            html += f"""
-                <div class="conversation-card" onclick="window.location.href='/dashboard/user/{conv["user_id"]}'">
-                    <div class="user-id">👤 {conv["user_id"]}</div>
-                    <div>
-                        <span class="badge badge-state">{conv["state"]}</span>
-                        <span class="badge badge-language">{conv["language"].upper()}</span>
-                        {skin_badge}
-                        {concerns_html}
-                    </div>
-                </div>
-            """
-    else:
-        html += """
-                <div class="empty-state">
-                    <h2>No conversations yet</h2>
-                    <p>Start chatting with GlowBot on WhatsApp to see conversations here!</p>
-                </div>
-        """
-    
-    html += """
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    
-    return HTMLResponse(html)
 
-# Add this test route
-@router.get("/test-template")
-def test_template(request: Request):
-    """Test if templates are working"""
-    try:
-        return templates.TemplateResponse(
-            "test.html",
-            {
-                "request": request,  # IMPORTANT: Must pass request
-                "name": "GlowBot",
-                "count": 5
-            }
+@router.get("/", response_class=HTMLResponse)
+async def dashboard_home(request: Request, db: AsyncSession = Depends(get_db)):
+    """Main dashboard showing all users and their conversations."""
+    result = await db.execute(
+        select(User)
+        .options(
+            selectinload(User.skin_concerns),
+            selectinload(User.conversations),
         )
-    except Exception as e:
-        return HTMLResponse(f"<h1>Template Error</h1><pre>{str(e)}</pre>")
+        .order_by(User.created_at.desc())
+    )
+    users = result.scalars().all()
 
-@router.get("/user/{user_id}")
-def user_detail(user_id: str):
-    from app.main import claude_service
-    
-    context = claude_service.user_contexts.get(user_id)
-    
-    if not context:
+    conversations = []
+    for user in users:
+        # Find the most recent active conversation, or most recent overall
+        active_conv = None
+        for conv in user.conversations:
+            if conv.is_active:
+                active_conv = conv
+                break
+        if not active_conv and user.conversations:
+            active_conv = max(user.conversations, key=lambda c: c.created_at)
+
+        concerns = [sc.concern for sc in user.skin_concerns]
+
+        conversations.append({
+            "user_id": user.phone_number,
+            "profile_name": user.profile_name,
+            "state": active_conv.state.value if active_conv else "no conversation",
+            "language": user.language or "en",
+            "skin_type": user.skin_type.value if user.skin_type and user.skin_type != SkinType.UNKNOWN else "Unknown",
+            "concerns": concerns,
+        })
+
+    total_users = len(users)
+    active_conversations = sum(
+        1 for c in conversations if c["state"] not in ("complete", "no conversation")
+    )
+    completed_conversations = sum(
+        1 for c in conversations if c["state"] == "complete"
+    )
+
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "total_users": total_users,
+        "active_conversations": active_conversations,
+        "completed_conversations": completed_conversations,
+        "conversations": conversations,
+    })
+
+
+@router.get("/user/{user_id}", response_class=HTMLResponse)
+async def user_detail(user_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """User detail page showing all collected data."""
+    result = await db.execute(
+        select(User)
+        .where(User.phone_number == user_id)
+        .options(
+            selectinload(User.health_info).selectinload(UserHealthInfo.medications),
+            selectinload(User.health_info).selectinload(UserHealthInfo.allergies),
+            selectinload(User.health_info).selectinload(UserHealthInfo.sensitivities),
+            selectinload(User.skin_concerns),
+            selectinload(User.preferences),
+            selectinload(User.routines),
+            selectinload(User.conversations),
+        )
+    )
+    user = result.scalar_one_or_none()
+
+    if not user:
         return HTMLResponse("<h1>User not found</h1>", status_code=404)
-    
-    # Get conversation history
-    history = claude_service._message_history.get(user_id, [])
-    
-    # Build concerns list
-    concerns_list = ", ".join(context.skin_profile.concerns) if context.skin_profile.concerns else "Not specified"
-    
-    # Build history HTML
-    history_html = ""
-    if history:
-        for msg in history:
-            msg_class = "message-user" if msg["role"] == "user" else "message-assistant"
-            history_html += f"""
-                <div class="message {msg_class}">
-                    <div class="message-role">{msg["role"].upper()}</div>
-                    <div>{msg["content"]}</div>
-                </div>
-            """
-    else:
-        history_html = '<p style="color: #999;">No conversation history yet</p>'
-    
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>User: {user_id}</title>
-        <style>
-            * {{
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }}
-            
-            body {{
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                padding: 20px;
-            }}
-            
-            .container {{
-                max-width: 1200px;
-                margin: 0 auto;
-            }}
-            
-            .back-button {{
-                display: inline-block;
-                padding: 10px 20px;
-                background: white;
-                color: #667eea;
-                text-decoration: none;
-                border-radius: 8px;
-                margin-bottom: 20px;
-                font-weight: bold;
-            }}
-            
-            .back-button:hover {{
-                background: #f5f5f5;
-            }}
-            
-            .card {{
-                background: white;
-                padding: 30px;
-                border-radius: 15px;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-                margin-bottom: 20px;
-            }}
-            
-            h1 {{
-                color: #667eea;
-                margin-bottom: 20px;
-            }}
-            
-            h2 {{
-                color: #333;
-                margin-bottom: 15px;
-                padding-bottom: 10px;
-                border-bottom: 2px solid #e0e0e0;
-            }}
-            
-            .info-row {{
-                display: flex;
-                padding: 12px 0;
-                border-bottom: 1px solid #f0f0f0;
-            }}
-            
-            .info-label {{
-                font-weight: bold;
-                color: #667eea;
-                width: 200px;
-            }}
-            
-            .info-value {{
-                flex: 1;
-            }}
-            
-            .message {{
-                padding: 15px;
-                margin: 10px 0;
-                border-radius: 10px;
-            }}
-            
-            .message-user {{
-                background: #e3f2fd;
-                margin-left: 40px;
-            }}
-            
-            .message-assistant {{
-                background: #f3e5f5;
-                margin-right: 40px;
-            }}
-            
-            .message-role {{
-                font-weight: bold;
-                margin-bottom: 5px;
-                font-size: 0.9em;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <a href="/dashboard" class="back-button">← Back to Dashboard</a>
-            
-            <div class="card">
-                <h1>👤 User Details</h1>
-                
-                <div class="info-row">
-                    <div class="info-label">User ID</div>
-                    <div class="info-value">{user_id}</div>
-                </div>
-                
-                <div class="info-row">
-                    <div class="info-label">Current State</div>
-                    <div class="info-value">{context.state.value}</div>
-                </div>
-                
-                <div class="info-row">
-                    <div class="info-label">Language</div>
-                    <div class="info-value">{context.language.upper()}</div>
-                </div>
-            </div>
-            
-            <div class="card">
-                <h2>Skin Profile</h2>
-                
-                <div class="info-row">
-                    <div class="info-label">Skin Type</div>
-                    <div class="info-value">{context.skin_profile.skin_type or 'Not specified'}</div>
-                </div>
-                
-                <div class="info-row">
-                    <div class="info-label">Concerns</div>
-                    <div class="info-value">{concerns_list}</div>
-                </div>
-                
-                <div class="info-row">
-                    <div class="info-label">Sun Exposure</div>
-                    <div class="info-value">{context.skin_profile.sun_exposure or 'Not specified'}</div>
-                </div>
-            </div>
-            
-            <div class="card">
-                <h2>Conversation History</h2>
-                {history_html}
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    
-    return HTMLResponse(html)
+
+    # Find active conversation (or most recent)
+    active_conv = None
+    for conv in user.conversations:
+        if conv.is_active:
+            active_conv = conv
+            break
+    if not active_conv and user.conversations:
+        active_conv = max(user.conversations, key=lambda c: c.created_at)
+
+    # Load messages for the active conversation
+    history = []
+    if active_conv:
+        msg_result = await db.execute(
+            select(Message)
+            .where(Message.conversation_id == active_conv.id)
+            .order_by(Message.created_at)
+        )
+        messages = msg_result.scalars().all()
+        history = [{"role": msg.role.value, "content": msg.content} for msg in messages]
+
+    # Build context dict with all collected data
+    context = {
+        "state": active_conv.state.value if active_conv else "no conversation",
+        "language": (user.language or "en").upper(),
+        "skin_profile": {
+            "skin_type": user.skin_type.value if user.skin_type else None,
+            "concerns": [sc.concern for sc in user.skin_concerns],
+            "sun_exposure": user.sun_exposure.value if user.sun_exposure else None,
+        },
+        "health_info": None,
+        "preferences": {
+            "budget_range": user.budget_range,
+            "requirements": [p.preference for p in user.preferences],
+        },
+        "routines": {
+            "morning": [
+                {"step": r.step.value, "product": r.product}
+                for r in user.routines if r.time_of_day == RoutineTime.MORNING
+            ],
+            "evening": [
+                {"step": r.step.value, "product": r.product}
+                for r in user.routines if r.time_of_day == RoutineTime.EVENING
+            ],
+        },
+        "account": {
+            "profile_name": user.profile_name,
+            "age_verified": user.age_verified,
+            "created_at": user.created_at.strftime("%Y-%m-%d %H:%M") if user.created_at else None,
+            "updated_at": user.updated_at.strftime("%Y-%m-%d %H:%M") if user.updated_at else None,
+        },
+    }
+
+    if user.health_info:
+        context["health_info"] = {
+            "is_pregnant": user.health_info.is_pregnant,
+            "is_nursing": user.health_info.is_nursing,
+            "planning_pregnancy": user.health_info.planning_pregnancy,
+            "medications": [m.name for m in user.health_info.medications],
+            "allergies": [a.allergen for a in user.health_info.allergies],
+            "sensitivities": [s.sensitivity for s in user.health_info.sensitivities],
+        }
+
+    return templates.TemplateResponse("user_detail.html", {
+        "request": request,
+        "user_id": user_id,
+        "context": context,
+        "history": history,
+    })

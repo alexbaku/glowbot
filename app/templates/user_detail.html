@@ -63,14 +63,83 @@
             border-bottom: 1px solid #f0f0f0;
         }
 
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
         .info-label {
             font-weight: bold;
             color: #667eea;
             width: 200px;
+            flex-shrink: 0;
         }
 
         .info-value {
             flex: 1;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            margin-right: 6px;
+            margin-bottom: 4px;
+        }
+
+        .badge-yes {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .badge-no {
+            background: #f5f5f5;
+            color: #999;
+        }
+
+        .badge-item {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .badge-preference {
+            background: #fce4ec;
+            color: #c62828;
+        }
+
+        .routine-section {
+            margin-bottom: 15px;
+        }
+
+        .routine-section h3 {
+            color: #667eea;
+            font-size: 1em;
+            margin-bottom: 8px;
+        }
+
+        .routine-step {
+            display: flex;
+            padding: 8px 12px;
+            background: #f8f9ff;
+            border-radius: 8px;
+            margin-bottom: 6px;
+        }
+
+        .routine-step-name {
+            font-weight: bold;
+            color: #667eea;
+            width: 140px;
+            text-transform: capitalize;
+            flex-shrink: 0;
+        }
+
+        .routine-step-product {
+            color: #555;
+        }
+
+        .empty-text {
+            color: #999;
+            font-style: italic;
         }
 
         .message {
@@ -89,6 +158,13 @@
             margin-right: 40px;
         }
 
+        .message-system {
+            background: #fff8e1;
+            margin-left: 20px;
+            margin-right: 20px;
+            font-style: italic;
+        }
+
         .message-role {
             font-weight: bold;
             margin-bottom: 5px;
@@ -99,52 +175,224 @@
 
 <body>
     <div class="container">
-        <a href="/dashboard" class="back-button">← Back to Dashboard</a>
+        <a href="/dashboard" class="back-button">&larr; Back to Dashboard</a>
 
+        <!-- Account Information -->
         <div class="card">
-            <h1>👤 User Details</h1>
+            <h1>User Details</h1>
 
             <div class="info-row">
-                <div class="info-label">User ID</div>
+                <div class="info-label">Phone Number</div>
                 <div class="info-value">{{ user_id }}</div>
             </div>
 
+            {% if context.account %}
+            <div class="info-row">
+                <div class="info-label">Profile Name</div>
+                <div class="info-value">{{ context.account.profile_name or 'Not set' }}</div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">Age Verified</div>
+                <div class="info-value">
+                    {% if context.account.age_verified %}
+                    <span class="badge badge-yes">Yes</span>
+                    {% else %}
+                    <span class="badge badge-no">No</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">Created</div>
+                <div class="info-value">{{ context.account.created_at or 'Unknown' }}</div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">Last Updated</div>
+                <div class="info-value">{{ context.account.updated_at or 'Unknown' }}</div>
+            </div>
+            {% endif %}
+
             <div class="info-row">
                 <div class="info-label">Current State</div>
-                <div class="info-value">{{ context.state }}</div>
+                <div class="info-value">{{ context.state|replace('_', ' ')|title }}</div>
             </div>
 
             <div class="info-row">
                 <div class="info-label">Language</div>
-                <div class="info-value">{{ context.language|upper }}</div>
+                <div class="info-value">{{ context.language }}</div>
             </div>
         </div>
 
+        <!-- Skin Profile -->
         <div class="card">
             <h2>Skin Profile</h2>
 
             <div class="info-row">
                 <div class="info-label">Skin Type</div>
-                <div class="info-value">{{ context.skin_profile.skin_type or 'Not specified' }}</div>
+                <div class="info-value">{{ context.skin_profile.skin_type|title if context.skin_profile.skin_type else 'Not specified' }}</div>
             </div>
 
             <div class="info-row">
                 <div class="info-label">Concerns</div>
                 <div class="info-value">
                     {% if context.skin_profile.concerns %}
-                    {{ context.skin_profile.concerns|join(', ') }}
+                    {% for concern in context.skin_profile.concerns %}
+                    <span class="badge badge-item">{{ concern }}</span>
+                    {% endfor %}
                     {% else %}
-                    Not specified
+                    <span class="empty-text">Not specified</span>
                     {% endif %}
                 </div>
             </div>
 
             <div class="info-row">
                 <div class="info-label">Sun Exposure</div>
-                <div class="info-value">{{ context.skin_profile.sun_exposure or 'Not specified' }}</div>
+                <div class="info-value">{{ context.skin_profile.sun_exposure|title if context.skin_profile.sun_exposure else 'Not specified' }}</div>
             </div>
         </div>
 
+        <!-- Health Information -->
+        <div class="card">
+            <h2>Health Information</h2>
+
+            {% if context.health_info %}
+            <div class="info-row">
+                <div class="info-label">Pregnant</div>
+                <div class="info-value">
+                    {% if context.health_info.is_pregnant %}
+                    <span class="badge badge-yes">Yes</span>
+                    {% else %}
+                    <span class="badge badge-no">No</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">Nursing</div>
+                <div class="info-value">
+                    {% if context.health_info.is_nursing %}
+                    <span class="badge badge-yes">Yes</span>
+                    {% else %}
+                    <span class="badge badge-no">No</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">Planning Pregnancy</div>
+                <div class="info-value">
+                    {% if context.health_info.planning_pregnancy %}
+                    <span class="badge badge-yes">Yes</span>
+                    {% else %}
+                    <span class="badge badge-no">No</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">Medications</div>
+                <div class="info-value">
+                    {% if context.health_info.medications %}
+                    {% for med in context.health_info.medications %}
+                    <span class="badge badge-item">{{ med }}</span>
+                    {% endfor %}
+                    {% else %}
+                    <span class="empty-text">None</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">Allergies</div>
+                <div class="info-value">
+                    {% if context.health_info.allergies %}
+                    {% for allergy in context.health_info.allergies %}
+                    <span class="badge badge-item">{{ allergy }}</span>
+                    {% endfor %}
+                    {% else %}
+                    <span class="empty-text">None</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">Sensitivities</div>
+                <div class="info-value">
+                    {% if context.health_info.sensitivities %}
+                    {% for sens in context.health_info.sensitivities %}
+                    <span class="badge badge-item">{{ sens }}</span>
+                    {% endfor %}
+                    {% else %}
+                    <span class="empty-text">None</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <p class="empty-text">No health information collected yet</p>
+            {% endif %}
+        </div>
+
+        <!-- Current Routine -->
+        <div class="card">
+            <h2>Current Routine</h2>
+
+            {% if context.routines.morning or context.routines.evening %}
+
+            {% if context.routines.morning %}
+            <div class="routine-section">
+                <h3>Morning Routine</h3>
+                {% for step in context.routines.morning %}
+                <div class="routine-step">
+                    <div class="routine-step-name">{{ step.step|replace('_', ' ') }}</div>
+                    <div class="routine-step-product">{{ step.product or 'No product specified' }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if context.routines.evening %}
+            <div class="routine-section">
+                <h3>Evening Routine</h3>
+                {% for step in context.routines.evening %}
+                <div class="routine-step">
+                    <div class="routine-step-name">{{ step.step|replace('_', ' ') }}</div>
+                    <div class="routine-step-product">{{ step.product or 'No product specified' }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% else %}
+            <p class="empty-text">No routine information collected yet</p>
+            {% endif %}
+        </div>
+
+        <!-- Product Preferences -->
+        <div class="card">
+            <h2>Product Preferences</h2>
+
+            <div class="info-row">
+                <div class="info-label">Budget Range</div>
+                <div class="info-value">{{ context.preferences.budget_range or 'Not specified' }}</div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">Requirements</div>
+                <div class="info-value">
+                    {% if context.preferences.requirements %}
+                    {% for pref in context.preferences.requirements %}
+                    <span class="badge badge-preference">{{ pref }}</span>
+                    {% endfor %}
+                    {% else %}
+                    <span class="empty-text">None specified</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Conversation History -->
         <div class="card">
             <h2>Conversation History</h2>
             {% if history %}
@@ -155,7 +403,7 @@
             </div>
             {% endfor %}
             {% else %}
-            <p style="color: #999;">No conversation history yet</p>
+            <p class="empty-text">No conversation history yet</p>
             {% endif %}
         </div>
     </div>
