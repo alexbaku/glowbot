@@ -1,5 +1,4 @@
 import logging
-import subprocess
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -22,15 +21,15 @@ logger = logging.getLogger(__name__)
 def _run_migrations():
     """Run alembic migrations before app starts."""
     logger.info("Running database migrations...")
-    import sys
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head"],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        logger.error(f"Migration failed: {result.stderr}")
-    else:
+    try:
+        from alembic.config import Config
+        from alembic import command
+
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
         logger.info("Migrations complete")
+    except Exception as e:
+        logger.error(f"Migration failed: {e}")
 
 
 @asynccontextmanager
