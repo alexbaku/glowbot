@@ -1,4 +1,5 @@
 import logging
+import subprocess
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -18,9 +19,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _run_migrations():
+    """Run alembic migrations before app starts."""
+    logger.info("Running database migrations...")
+    result = subprocess.run(
+        ["alembic", "upgrade", "head"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        logger.error(f"Migration failed: {result.stderr}")
+    else:
+        logger.info("Migrations complete")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting up GlowBot...")
+    _run_migrations()
     await init_db()
     logger.info("Database initialized")
     yield
