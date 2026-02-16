@@ -22,8 +22,9 @@ logger = logging.getLogger(__name__)
 def _run_migrations():
     """Run alembic migrations before app starts."""
     logger.info("Running database migrations...")
+    import sys
     result = subprocess.run(
-        ["alembic", "upgrade", "head"],
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
         capture_output=True, text=True,
     )
     if result.returncode != 0:
