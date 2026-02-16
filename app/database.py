@@ -49,17 +49,8 @@ async def get_db() -> AsyncSession:
 async def init_db():
     """Initialize database tables"""
     async with engine.begin() as conn:
-        # Import all models here
-        from app.models import (
-            conversation,
-            health_info,
-            preference,
-            routine,
-            skin_concern,
-            user,
-        )
+        from app.models import db  # noqa: F401 — registers models with Base
 
-        # Create all tables
         await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables created successfully")
 

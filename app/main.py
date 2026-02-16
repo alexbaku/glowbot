@@ -1,4 +1,3 @@
-from app.dashboard import router as dashboard_router
 import logging
 from contextlib import asynccontextmanager
 
@@ -7,31 +6,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.crud  import conversation_crud, user_crud
+from app.dashboard import router as dashboard_router
 from app.database import close_db, get_db, init_db
-from app.models.conversation import MessageRole
-from app.services.claude import ClaudeService
+from app.services.orchestrator import GlowBotService
 from app.services.twilio import WhatsAppService
-from fastapi import Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.database import get_db, init_db, close_db
 
-# Set up logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage application lifecycle"""
-    # Startup
     logger.info("Starting up GlowBot...")
     await init_db()
     logger.info("Database initialized")
     yield
-    # Shutdown
     logger.info("Shutting down...")
     await close_db()
 
@@ -46,62 +38,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize services
 settings = Settings()
-claude_service = ClaudeService(settings)
+glowbot = GlowBotService()
 whatsapp_service = WhatsAppService(settings)
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on startup"""
-    logger.info("Starting up GlowBot.AI...")
-    await init_db()
-    logger.info("✓ Database initialized successfully")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Clean up on shutdown"""
-    logger.info("Shutting down GlowBot.AI...")
-    await close_db()
-    logger.info("Database connections closed")
-
 app.include_router(dashboard_router, prefix="/dashboard")
+
 
 @app.get("/")
 async def health_check():
     return {"status": "healthy", "service": "GlowBot.AI"}
 
+
 @app.post("/webhook/whatsapp")
 async def whatsapp_webhook(
     request: Request,
-    db: AsyncSession = Depends(get_db)  # ADD THIS LINE
+    db: AsyncSession = Depends(get_db),
 ):
     try:
         form_data = await request.form()
         message_data = whatsapp_service.format_incoming_message(dict(form_data))
-        
-        phone_number = message_data['from_number']  # Rename for clarity
-        user_message = message_data['body']
-        
+
+        phone_number = message_data["from_number"]
+        user_message = message_data["body"]
+        media_url = message_data.get("media_url")
+        profile_name = message_data.get("profile_name")
+
         logger.info(f"Received message from {phone_number}: {user_message[:50]}...")
-        
-        # Pass database session
-        response = await claude_service.get_response(
+
+        responses = await glowbot.handle_message(
             phone_number=phone_number,
-            user_message=user_message,
-            db=db
+            message=user_message,
+            db=db,
+            media_url=media_url,
+            profile_name=profile_name,
         )
-        
-        await whatsapp_service.send_message(
-            to=phone_number,
-            message=response
-        )
-        
-        logger.info(f"Sent response to {phone_number}")
-        
+
+        for part in responses:
+            await whatsapp_service.send_message(to=phone_number, message=part)
+
+        logger.info(f"Sent {len(responses)} message(s) to {phone_number}")
         return {"status": "success"}
-        
+
     except Exception as e:
         logger.error(f"Error in webhook: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

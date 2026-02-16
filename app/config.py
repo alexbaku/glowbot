@@ -25,5 +25,8 @@ class Settings(BaseSettings):
     db_max_overflow: int = 10
     db_pool_timeout: int = 30
 
-    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', exra='ignore')
+    # Model settings
+    anthropic_model: str = "claude-sonnet-4-5-20250929"
+
+    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 

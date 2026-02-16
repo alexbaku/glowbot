@@ -15,7 +15,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from app.database import Base
 from app.config import Settings
 
-from app.models import user, conversation, health_info, preference, routine, skin_concern
+from app.models import db  # noqa: F401 — registers models with Base
 
 settings = Settings()
 
