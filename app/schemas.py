@@ -87,21 +87,43 @@ class UserProfile(BaseModel):
     # Meta
     age_verified: bool = False
     language: str = "en"
-    interview_complete: bool = False
-    last_routine: Optional[dict] = None
+    health_screened: bool = False  # True once allergies/sensitivities/meds addressed
+    turns_since_sufficient: int = 0  # tracks turns after all required fields filled
 
 
 # ── Agent result types ───────────────────────────────────────────────────────
 
 
-class InterviewResult(BaseModel):
-    """Returned by the interview agent on every call."""
+class ProfileUpdates(BaseModel):
+    """Incremental profile updates — None means no change for that field."""
+
+    skin_type: Optional[SkinType] = None
+    concerns: Optional[list[str]] = None
+    age_verified: Optional[bool] = None
+    is_pregnant: Optional[bool] = None
+    is_nursing: Optional[bool] = None
+    planning_pregnancy: Optional[bool] = None
+    medications: Optional[list[str]] = None
+    allergies: Optional[list[str]] = None
+    sensitivities: Optional[list[str]] = None
+    sun_exposure: Optional[SunExposure] = None
+    budget: Optional[BudgetRange] = None
+    preferences: Optional[list[str]] = None
+    current_routine_morning: Optional[str] = None
+    current_routine_evening: Optional[str] = None
+    knowledge_level: Optional[KnowledgeLevel] = None
+    notes: Optional[str] = None
+    image_analysis: Optional[str] = None
+    health_screened: Optional[bool] = None
+
+
+class OrchestratorResult(BaseModel):
+    """Returned by the orchestrator agent on every call."""
 
     response: str = Field(description="Message to send to the user")
-    profile: UserProfile = Field(description="Updated user profile")
-    interview_complete: bool = Field(
-        default=False,
-        description="True when minimum data has been collected",
+    profile_updates: Optional[ProfileUpdates] = Field(
+        default=None,
+        description="Incremental profile updates extracted from this turn, or null if nothing new",
     )
 
 
