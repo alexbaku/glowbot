@@ -238,6 +238,11 @@ The user has received their skincare routine. You can:
 - Explain why certain steps or ingredients were chosen
 - Suggest modifications based on new information
 
+TOOL USAGE:
+- Use get_detailed_routine if the user wants more detail on their existing routine
+- ONLY use generate_routine if the user explicitly asks to START OVER or regenerate after a major profile change
+- Never call generate_routine just because the user seems enthusiastic ("I'd love to", "yes please", etc.)
+
 You have full access to their routine and profile below.
 
 PROFILE:
@@ -258,6 +263,40 @@ PERSONALITY:
 
 {phase_block}
 
+VISION — WHEN THE USER SENDS AN IMAGE:
+You may receive images alongside messages. Analyze them carefully and respond based on what you see.
+
+Image types and how to handle each:
+
+SKIN PHOTOS (bare skin, face, body area):
+- Describe what you observe: texture, tone, visible concerns (acne, redness, dryness, oiliness, etc.)
+- During INTERVIEWING: if you can infer skin type or concerns from the photo, include them in
+  profile_updates (skin_type, concerns) — this pre-fills the interview naturally
+- Always tell the user what you observed so they can confirm or correct
+- Be careful: photos can be misleading (lighting, filters) — treat visual findings as helpful
+  hints, not diagnoses
+
+PRODUCT LABELS (ingredient lists, back of bottle):
+- Extract and name the key active ingredients you can read
+- Cross-check against the user's known allergies, sensitivities, and skin type
+- Flag any concerning ingredients (e.g. fragrance for sensitive skin, comedogenic oils for oily skin)
+- Tell the user whether this product looks suitable for their profile
+
+PRODUCT PACKAGING / FRONT OF BOTTLE:
+- Identify the product and brand if visible
+- Assess whether the product category fits their current routine or skin goals
+- Note anything that stands out (e.g. "SPF 15 is on the low side for high sun exposure")
+
+OTHER IMAGES:
+- Do your best to interpret how it relates to skincare
+- If it seems unrelated, acknowledge it briefly and redirect to the consultation
+
+ALWAYS:
+- Store a concise summary of what you saw in profile_updates.image_analysis
+  (e.g. "User sent photo of face — appears oily T-zone, visible blackheads on nose")
+  (e.g. "User sent label of CeraVe moisturizer — key ingredients: ceramides, hyaluronic acid, niacinamide — suitable for their dry sensitive skin")
+- If you cannot make out the image clearly, say so and ask the user to describe it
+
 OUTPUT FORMAT:
 - response: Your message to the user (WhatsApp-friendly, use *bold* for emphasis)
 - profile_updates: Any new profile data extracted from this message (null if nothing new)
@@ -269,10 +308,17 @@ OUTPUT FORMAT:
 
 @orchestrator_agent.tool
 async def generate_routine(ctx: RunContext[OrchestratorDeps]) -> str:
-    """Generate a new personalized skincare routine. Use when the user wants
-    a fresh routine (e.g., after updating their profile or concerns)."""
+    """Generate a NEW personalized skincare routine.
+    ONLY call this when:
+    1. No routine exists yet AND the user has asked for their routine to be built.
+    2. The user explicitly asks to REGENERATE their routine after updating their profile.
+    Do NOT call this to show an existing routine — use get_detailed_routine instead."""
     from app.agents.routine_planner import routine_planner_agent
-    from app.services.message_splitter import split_for_whatsapp
+
+    # Guard: if a routine already exists, return it instead of regenerating
+    if ctx.deps.routine_json:
+        routine = SkincareRoutine.model_validate(ctx.deps.routine_json)
+        return _format_routine_short(routine)
 
     profile = ctx.deps.profile
     result = await routine_planner_agent.run(

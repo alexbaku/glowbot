@@ -81,11 +81,24 @@ async def whatsapp_webhook(
 
         logger.info(f"Received message from {phone_number}: {user_message[:50]}...")
 
+        # Download image bytes server-side — Twilio URLs require Basic Auth
+        # and cannot be fetched directly by Claude's API.
+        image_data: bytes | None = None
+        image_content_type = "image/jpeg"
+        if media_url:
+            try:
+                image_data, image_content_type = await whatsapp_service.download_media(media_url)
+                logger.info(f"Downloaded media ({image_content_type}, {len(image_data)} bytes)")
+            except Exception as e:
+                logger.warning(f"Failed to download media from {media_url}: {e}")
+
         responses = await glowbot.handle_message(
             phone_number=phone_number,
             message=user_message,
             db=db,
             media_url=media_url,
+            image_data=image_data,
+            image_content_type=image_content_type,
             profile_name=profile_name,
         )
 
