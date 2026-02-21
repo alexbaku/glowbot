@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from app.config import Settings
 from typing import Optional
 import logging
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,26 @@ class WhatsAppService:
         except Exception as e:
             logger.error(f"Error sending WhatsApp message: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to send message")
+
+    async def download_media(self, media_url: str) -> tuple[bytes, str]:
+        """Download a Twilio media file using Basic Auth credentials.
+
+        Twilio media URLs require HTTP Basic Auth — Claude cannot fetch them
+        directly. This method downloads the bytes server-side so they can be
+        passed to Claude as BinaryContent.
+
+        Returns (image_bytes, content_type), e.g. (b'...', 'image/jpeg').
+        """
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                media_url,
+                auth=(self.settings.twilio_account_sid, self.settings.twilio_auth_token),
+                follow_redirects=True,
+                timeout=15.0,
+            )
+            response.raise_for_status()
+            content_type = response.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+            return response.content, content_type
 
     def extract_media_url(self, request_data: dict) -> Optional[str]:
         """Extract media URL from Twilio request if present"""

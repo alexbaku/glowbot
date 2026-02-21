@@ -9,7 +9,9 @@ Code gates enforce phase transitions and safety rules.
 import logging
 from typing import Optional
 
+from pydantic_ai import BinaryContent
 from pydantic_ai.messages import (
+    ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
 )
@@ -113,35 +115,27 @@ def _apply_profile_updates(profile: UserProfile, updates) -> UserProfile:
 
 def _serialize_history(history: list) -> list:
     """Convert pydantic-ai message objects to JSON-serializable dicts."""
-    out = []
-    for msg in history:
-        if hasattr(msg, "model_dump"):
-            out.append(msg.model_dump(mode="json"))
-        elif isinstance(msg, dict):
-            out.append(msg)
-        else:
-            out.append(str(msg))
-    return out
+    if not history:
+        return []
+    try:
+        raw = ModelMessagesTypeAdapter.dump_json(history)
+        import json
+        return json.loads(raw)
+    except Exception:
+        logger.warning("Failed to serialize message history, returning empty")
+        return []
 
 
 def _deserialize_history(raw: list) -> list:
     """Reconstruct pydantic-ai message objects from stored JSON."""
     if not raw:
         return []
-    result = []
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        kind = item.get("kind")
-        try:
-            if kind == "request":
-                result.append(ModelRequest.model_validate(item))
-            elif kind == "response":
-                result.append(ModelResponse.model_validate(item))
-        except Exception:
-            logger.warning("Skipping malformed message history entry: %s", kind)
-            continue
-    return result
+    try:
+        import json
+        return list(ModelMessagesTypeAdapter.validate_json(json.dumps(raw)))
+    except Exception:
+        logger.warning("Failed to deserialize message history, returning empty")
+        return []
 
 
 # ── Main service ────────────────────────────────────────────────────────────
@@ -156,6 +150,8 @@ class GlowBotService:
         message: str,
         db: AsyncSession,
         media_url: Optional[str] = None,
+        image_data: Optional[bytes] = None,
+        image_content_type: str = "image/jpeg",
         profile_name: Optional[str] = None,
     ) -> list[str]:
         """Process an incoming WhatsApp message. Returns a list of response strings."""
@@ -243,10 +239,10 @@ class GlowBotService:
                 )
 
                 # Build user prompt — multimodal if image present
-                if media_url:
+                if image_data:
                     user_prompt: str | list = [
-                        {"type": "image", "source": {"type": "url", "url": media_url}},
-                        {"type": "text", "text": message or "Here's a photo of my skin"},
+                        BinaryContent(data=image_data, media_type=image_content_type),
+                        message or "Here's a photo",
                     ]
                 else:
                     user_prompt = message
