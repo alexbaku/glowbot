@@ -7,6 +7,7 @@ Code gates enforce phase transitions and safety rules.
 """
 
 import logging
+import re
 from typing import Optional
 
 from pydantic_ai import BinaryContent
@@ -87,13 +88,23 @@ def _wants_details(message: str) -> bool:
 
 
 def _wants_restart(message: str) -> bool:
-    """Check if the user wants to start over."""
+    """Check if the user wants to start over.
+
+    Uses word-boundary matching to avoid false positives from words like
+    'מחדשת' (renewing/reapplying) accidentally matching 'מחדש' (start over).
+    """
     lower = message.lower().strip()
-    signals = [
-        "start over", "restart", "new consultation", "reset",
-        "מחדש", "התחל מחדש",
+    # English: use \b word boundaries
+    # Hebrew: require the word to be surrounded by whitespace/punctuation or string edges
+    patterns = [
+        r"\bstart over\b",
+        r"\brestart\b",
+        r"\bnew consultation\b",
+        r"\breset\b",
+        r"(?:^|[\s,\.!?])מחדש(?:$|[\s,\.!?])",
+        r"(?:^|[\s,\.!?])התחל מחדש(?:$|[\s,\.!?])",
     ]
-    return any(sig in lower for sig in signals)
+    return any(re.search(p, lower) for p in patterns)
 
 
 def _apply_profile_updates(profile: UserProfile, updates) -> UserProfile:
@@ -189,27 +200,34 @@ class GlowBotService:
 
             # ── Fast path: confirmation in REVIEWING phase ──
             elif phase == ConversationPhase.REVIEWING and _is_confirmation(message):
-                logger.info("User confirmed profile — generating routine plan")
-                if profile.language == "hebrew":
-                    ack = "מעולה! אני מכינה לך עכשיו תוכנית טיפוח מותאמת אישית... ⏳"
+                if routine_json:
+                    # Routine already generated (e.g. duplicate webhook or race condition) — skip
+                    logger.info("Routine already exists in REVIEWING confirmation — skipping duplicate generation")
+                    routine = SkincareRoutine.model_validate(routine_json)
+                    responses = split_for_whatsapp(_format_routine_short(routine))
+                    phase = ConversationPhase.COMPLETE
                 else:
-                    ack = "Wonderful! Let me create your personalized skincare routine now... ⏳"
+                    logger.info("User confirmed profile — generating routine plan")
+                    if profile.language == "hebrew":
+                        ack = "מעולה! אני מכינה לך עכשיו תוכנית טיפוח מותאמת אישית... ⏳"
+                    else:
+                        ack = "Wonderful! Let me create your personalized skincare routine now... ⏳"
 
-                result = await routine_planner_agent.run(
-                    "Generate a complete personalized skincare routine based on my profile.",
-                    deps=profile,
-                )
-                routine = result.output
-                routine_json = routine.model_dump(mode="json")
+                    result = await routine_planner_agent.run(
+                        "Generate a complete personalized skincare routine based on my profile.",
+                        deps=profile,
+                    )
+                    routine = result.output
+                    routine_json = routine.model_dump(mode="json")
 
-                short = _format_routine_short(routine)
-                if profile.language == "hebrew":
-                    cta = "רוצה את הגרסה המפורטת עם טיפים ליישום? פשוט תגידי *כן* 😊"
-                else:
-                    cta = "Want the detailed version with application tips? Just say *yes* 😊"
+                    short = _format_routine_short(routine)
+                    if profile.language == "hebrew":
+                        cta = "רוצה את הגרסה המפורטת עם טיפים ליישום? פשוט תגידי *כן* 😊"
+                    else:
+                        cta = "Want the detailed version with application tips? Just say *yes* 😊"
 
-                responses = [ack] + split_for_whatsapp(short) + [cta]
-                phase = ConversationPhase.COMPLETE
+                    responses = [ack] + split_for_whatsapp(short) + [cta]
+                    phase = ConversationPhase.COMPLETE
 
             # ── Fast path: detailed routine request in COMPLETE phase ──
             elif (

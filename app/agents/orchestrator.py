@@ -238,6 +238,11 @@ The user has received their skincare routine. You can:
 - Explain why certain steps or ingredients were chosen
 - Suggest modifications based on new information
 
+TOOL USAGE:
+- Use get_detailed_routine if the user wants more detail on their existing routine
+- ONLY use generate_routine if the user explicitly asks to START OVER or regenerate after a major profile change
+- Never call generate_routine just because the user seems enthusiastic ("I'd love to", "yes please", etc.)
+
 You have full access to their routine and profile below.
 
 PROFILE:
@@ -303,10 +308,17 @@ OUTPUT FORMAT:
 
 @orchestrator_agent.tool
 async def generate_routine(ctx: RunContext[OrchestratorDeps]) -> str:
-    """Generate a new personalized skincare routine. Use when the user wants
-    a fresh routine (e.g., after updating their profile or concerns)."""
+    """Generate a NEW personalized skincare routine.
+    ONLY call this when:
+    1. No routine exists yet AND the user has asked for their routine to be built.
+    2. The user explicitly asks to REGENERATE their routine after updating their profile.
+    Do NOT call this to show an existing routine — use get_detailed_routine instead."""
     from app.agents.routine_planner import routine_planner_agent
-    from app.services.message_splitter import split_for_whatsapp
+
+    # Guard: if a routine already exists, return it instead of regenerating
+    if ctx.deps.routine_json:
+        routine = SkincareRoutine.model_validate(ctx.deps.routine_json)
+        return _format_routine_short(routine)
 
     profile = ctx.deps.profile
     result = await routine_planner_agent.run(
