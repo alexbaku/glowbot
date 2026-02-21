@@ -127,6 +127,23 @@ class OrchestratorResult(BaseModel):
     )
 
 
+class ProductRecommendation(BaseModel):
+    """One iHerb product recommendation linked to a routine step."""
+
+    step_name: str = Field(description="e.g. 'Cleanser', 'Vitamin C Serum'")
+    search_query: str = Field(description="Clean search terms for iHerb, e.g. 'salicylic acid gel cleanser'")
+    iherb_url: str = Field(description="Full affiliate search URL")
+    note: str = Field(description="Personalised one-liner, e.g. 'fragrance-free for your sensitivity'")
+
+
+class ShoppingList(BaseModel):
+    """Formatted shopping list returned by the product linker agent."""
+
+    intro: str = Field(description="Warm one-sentence intro to the shopping list")
+    recommendations: list[ProductRecommendation]
+    outro: str = Field(description="Brief closing tip, e.g. filter by rating on iHerb")
+
+
 class RoutineStep(BaseModel):
     """A single step in a skincare routine — structured for future affiliate matching."""
 

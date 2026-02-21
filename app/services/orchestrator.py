@@ -22,10 +22,12 @@ from app.agents.orchestrator import (
     orchestrator_agent,
 )
 from app.agents.routine_planner import routine_planner_agent
+from app.config import Settings
 from app.models.db import MessageRole
 from app.repository import UserRepository
 from app.schemas import ConversationPhase, SkincareRoutine, UserProfile
 from app.services.message_splitter import split_for_whatsapp
+from app.services.product_linker import ProductLinkerService
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,7 @@ logger = logging.getLogger(__name__)
 MAX_HISTORY_PAIRS = 20
 
 repo = UserRepository()
+product_linker = ProductLinkerService(Settings())
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -212,7 +215,8 @@ class GlowBotService:
                 else:
                     cta = "Want the detailed version with application tips? Just say *yes* 😊"
 
-                responses = [ack] + split_for_whatsapp(short) + [cta]
+                shopping = await product_linker.generate_shopping_list(routine, profile)
+                responses = [ack] + split_for_whatsapp(short) + [cta] + shopping
                 phase = ConversationPhase.COMPLETE
 
             # ── Fast path: detailed routine request in COMPLETE phase ──
@@ -265,6 +269,22 @@ class GlowBotService:
                 if deps.routine_json != routine_json:
                     routine_json = deps.routine_json
                     phase = ConversationPhase.COMPLETE
+                    # Append shopping list when a fresh routine is generated mid-conversation
+                    fresh_routine = SkincareRoutine.model_validate(routine_json)
+                    shopping = await product_linker.generate_shopping_list(fresh_routine, profile)
+                    responses = split_for_whatsapp(result.output.response) + shopping
+                    message_history = message_history + list(result.new_messages())
+                    # Skip the default response assignment below
+                    user.profile_json = profile.model_dump(mode="json")
+                    user.conversation_phase = phase.value
+                    user.routine_json = routine_json
+                    trimmed = message_history[-(MAX_HISTORY_PAIRS * 2):]
+                    user.message_history_json = _serialize_history(trimmed)
+                    await repo.save(db, user)
+                    full_response = "\n\n".join(responses)
+                    await repo.log_message(db, user.id, MessageRole.ASSISTANT, full_response)
+                    logger.info(f"Handled message | User: {phone_number} | Phase: {phase.value} | Parts: {len(responses)}")
+                    return responses
 
                 # Code-controlled phase transitions
                 new_sufficient = _is_profile_sufficient(profile)
@@ -280,6 +300,9 @@ class GlowBotService:
                         profile.turns_since_sufficient = 0
 
                 responses = split_for_whatsapp(result.output.response)
+                # Append shopping list if the agent called get_product_recommendations
+                if deps.shopping_list_messages:
+                    responses = responses + deps.shopping_list_messages
                 message_history = message_history + list(result.new_messages())
 
             # 6. Persist state

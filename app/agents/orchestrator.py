@@ -32,6 +32,7 @@ class OrchestratorDeps:
     profile_sufficient: bool
     routine_json: Optional[dict] = None
     force_summarize: bool = False  # True when 2+ turns past sufficiency
+    shopping_list_messages: list = field(default_factory=list)  # Set by get_product_recommendations tool
 
 
 orchestrator_agent = Agent(
@@ -237,6 +238,8 @@ The user has received their skincare routine. You can:
 - Recommend specific product types or ingredient categories
 - Explain why certain steps or ingredients were chosen
 - Suggest modifications based on new information
+- If the user asks for product links, where to buy, or a shopping list — call
+  the get_product_recommendations tool to generate their personalised iHerb list
 
 You have full access to their routine and profile below.
 
@@ -294,6 +297,29 @@ async def get_detailed_routine(ctx: RunContext[OrchestratorDeps]) -> str:
         return "No routine has been generated yet."
     routine = SkincareRoutine.model_validate(ctx.deps.routine_json)
     return _format_routine_detailed(routine)
+
+
+@orchestrator_agent.tool
+async def get_product_recommendations(ctx: RunContext[OrchestratorDeps]) -> str:
+    """Generate a personalised iHerb shopping list for the user's current routine.
+    Call this when the user asks where to buy products, asks for product links,
+    or requests a shopping list."""
+    if not ctx.deps.routine_json:
+        return "No routine has been generated yet — generate a routine first."
+
+    from app.config import Settings
+    from app.schemas import SkincareRoutine
+    from app.services.product_linker import ProductLinkerService
+
+    routine = SkincareRoutine.model_validate(ctx.deps.routine_json)
+    service = ProductLinkerService(Settings())
+    messages = await service.generate_shopping_list(routine, ctx.deps.profile)
+
+    # Store formatted list in deps so the service layer can append it to responses
+    ctx.deps.shopping_list_messages = messages
+
+    # Return a short confirmation — the actual links are in deps.shopping_list_messages
+    return f"Shopping list generated with {len(messages)} message(s). Tell the user it's coming right up — the links will be sent automatically."
 
 
 # ── Routine formatting (ported from old orchestrator) ───────────────────────

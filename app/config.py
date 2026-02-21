@@ -28,5 +28,11 @@ class Settings(BaseSettings):
     # Model settings
     anthropic_model: str = "claude-sonnet-4-5-20250929"
 
+    # iHerb affiliate — full search URL template.
+    # {query} is replaced with URL-encoded search terms.
+    # Swap this single value when your affiliate program is approved.
+    # Current value uses referral code; update to your affiliate deep-link when ready.
+    iherb_search_template: str = "https://il.iherb.com/search?query={query}&rcode=VZH480"
+
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 
