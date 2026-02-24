@@ -86,7 +86,7 @@ class UserProfile(BaseModel):
 
     # Meta
     age_verified: bool = False
-    language: str = "en"
+    language: str = "english"
     health_screened: bool = False  # True once allergies/sensitivities/meds addressed
     turns_since_sufficient: int = 0  # tracks turns after all required fields filled
 

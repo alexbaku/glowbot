@@ -1,201 +1,380 @@
 <!DOCTYPE html>
 <html>
-
 <head>
     <title>GlowBot Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            padding: 20px;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        .header {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            margin-bottom: 30px;
-        }
-
-        .header h1 {
-            color: #667eea;
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }
-
-        .stats {
-            display: flex;
-            gap: 20px;
-            margin-top: 20px;
-        }
-
-        .stat-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            flex: 1;
-            text-align: center;
-        }
-
-        .stat-card h3 {
-            font-size: 2.5em;
-            margin-bottom: 5px;
-        }
-
-        .stat-card p {
-            opacity: 0.9;
-        }
-
-        .conversations {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-        }
-
-        .conversations h2 {
-            margin-bottom: 20px;
+            padding: 24px;
             color: #333;
         }
 
-        .conversation-card {
-            border: 2px solid #e0e0e0;
+        .container { max-width: 1280px; margin: 0 auto; }
+
+        /* ── Header ── */
+        .header {
+            background: white;
+            padding: 28px 32px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+            margin-bottom: 24px;
+        }
+        .header h1 { color: #667eea; font-size: 2em; margin-bottom: 4px; }
+        .header p { color: #888; font-size: 0.95em; }
+
+        /* ── Stat cards ── */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-top: 24px;
+        }
+        .stat-card {
             padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 15px;
-            transition: all 0.3s;
-            cursor: pointer;
+            border-radius: 12px;
+            text-align: center;
+            color: white;
+        }
+        .stat-card.purple { background: linear-gradient(135deg, #667eea, #764ba2); }
+        .stat-card.green  { background: linear-gradient(135deg, #43e97b, #38f9d7); color: #1a5c2e; }
+        .stat-card.orange { background: linear-gradient(135deg, #f7971e, #ffd200); color: #5c3b00; }
+        .stat-card.blue   { background: linear-gradient(135deg, #4facfe, #00f2fe); color: #00445c; }
+        .stat-card h3 { font-size: 2.4em; font-weight: 700; margin-bottom: 4px; }
+        .stat-card p  { font-size: 0.85em; opacity: 0.9; font-weight: 500; }
+
+        /* ── Funnel ── */
+        .card {
+            background: white;
+            padding: 28px 32px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+            margin-bottom: 24px;
+        }
+        .card h2 {
+            font-size: 1.15em;
+            color: #444;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #f0f0f0;
         }
 
+        .funnel { display: flex; align-items: center; gap: 0; }
+        .funnel-step { flex: 1; text-align: center; position: relative; }
+        .funnel-bar {
+            height: 48px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.1em;
+            color: white;
+            margin: 0 4px;
+        }
+        .funnel-bar.interview { background: #667eea; }
+        .funnel-bar.review    { background: #f7971e; }
+        .funnel-bar.complete  { background: #43e97b; color: #1a5c2e; }
+        .funnel-label {
+            margin-top: 8px;
+            font-size: 0.8em;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .funnel-arrow {
+            font-size: 1.5em;
+            color: #ccc;
+            flex: 0 0 20px;
+            text-align: center;
+            padding-bottom: 20px;
+        }
+
+        /* ── Charts ── */
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        .chart-card {
+            background: white;
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+        }
+        .chart-card h2 {
+            font-size: 1em;
+            color: #555;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        .chart-container { position: relative; height: 220px; }
+
+        /* ── User list ── */
+        .user-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .user-count { font-size: 0.85em; color: #999; }
+
+        .conversation-card {
+            border: 2px solid #eee;
+            padding: 16px 20px;
+            border-radius: 10px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
         .conversation-card:hover {
             border-color: #667eea;
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
-            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(102,126,234,0.15);
+            transform: translateY(-1px);
         }
-
-        .user-id {
-            font-weight: bold;
-            color: #667eea;
-            font-size: 1.2em;
-        }
-
-        .user-phone {
-            color: #999;
-            font-size: 0.9em;
-            margin-bottom: 10px;
-        }
+        .conv-left { flex: 1; }
+        .user-name { font-weight: 600; color: #667eea; font-size: 1.05em; }
+        .user-phone { color: #aaa; font-size: 0.85em; margin-bottom: 8px; }
+        .conv-right { font-size: 0.8em; color: #bbb; text-align: right; }
 
         .badge {
             display: inline-block;
-            padding: 5px 12px;
+            padding: 3px 10px;
             border-radius: 20px;
-            font-size: 0.85em;
-            margin-right: 8px;
-            margin-top: 5px;
+            font-size: 0.78em;
+            margin-right: 6px;
+            margin-top: 4px;
         }
+        .badge-state-interviewing { background: #e8eaff; color: #667eea; }
+        .badge-state-reviewing    { background: #fff3e0; color: #e65100; }
+        .badge-state-complete     { background: #e8f5e9; color: #2e7d32; }
+        .badge-language { background: #f5f5f5; color: #555; }
+        .badge-skin     { background: #e3f2fd; color: #1565c0; }
+        .badge-concern  { background: #fff8e1; color: #f57c00; }
 
-        .badge-state {
-            background: #667eea;
-            color: white;
-        }
+        .empty-state { text-align: center; padding: 60px 20px; color: #aaa; }
+        .empty-state h2 { color: #888; margin-bottom: 8px; }
 
-        .badge-language {
-            background: #f0f0f0;
-            color: #333;
-        }
-
-        .badge-skin {
-            background: #e3f2fd;
-            color: #1976d2;
-        }
-
-        .badge-concern {
-            background: #fff3e0;
-            color: #f57c00;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #999;
-        }
-
-        .empty-state h2 {
-            margin-bottom: 10px;
-            color: #666;
-        }
+        .no-data { color: #ccc; font-size: 0.9em; text-align: center; padding: 40px; }
     </style>
 </head>
-
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>GlowBot Dashboard</h1>
-            <p>Monitor your skincare consultations</p>
+<div class="container">
 
-            <div class="stats">
-                <div class="stat-card">
-                    <h3>{{ total_users }}</h3>
-                    <p>Total Users</p>
-                </div>
-                <div class="stat-card">
-                    <h3>{{ active_conversations }}</h3>
-                    <p>Active Conversations</p>
-                </div>
-                <div class="stat-card">
-                    <h3>{{ completed_conversations }}</h3>
-                    <p>Completed Consultations</p>
-                </div>
+    <!-- Header + stat cards -->
+    <div class="header">
+        <h1>GlowBot Dashboard</h1>
+        <p>Skincare consultation analytics</p>
+
+        <div class="stat-grid">
+            <div class="stat-card purple">
+                <h3>{{ total_users }}</h3>
+                <p>Total Users</p>
+            </div>
+            <div class="stat-card blue">
+                <h3>{{ in_interview }}</h3>
+                <p>In Interview</p>
+            </div>
+            <div class="stat-card orange">
+                <h3>{{ in_review }}</h3>
+                <p>In Review</p>
+            </div>
+            <div class="stat-card green">
+                <h3>{{ completed }}</h3>
+                <p>Routines Delivered</p>
             </div>
         </div>
+    </div>
 
-        <div class="conversations">
-            <h2>All Users</h2>
+    <!-- Funnel -->
+    <div class="card">
+        <h2>Consultation Funnel &nbsp;<span style="color:#aaa;font-weight:400;font-size:0.85em;">{{ conversion_rate }}% completion rate</span></h2>
+        <div class="funnel">
+            <div class="funnel-step">
+                <div class="funnel-bar interview">{{ in_interview }}</div>
+                <div class="funnel-label">Interviewing</div>
+            </div>
+            <div class="funnel-arrow">›</div>
+            <div class="funnel-step">
+                <div class="funnel-bar review">{{ in_review }}</div>
+                <div class="funnel-label">Reviewing</div>
+            </div>
+            <div class="funnel-arrow">›</div>
+            <div class="funnel-step">
+                <div class="funnel-bar complete">{{ completed }}</div>
+                <div class="funnel-label">Complete</div>
+            </div>
+        </div>
+    </div>
 
-            {% if conversations %}
-            {% for conv in conversations %}
-            <div class="conversation-card" onclick="window.location.href='/dashboard/user/{{ conv.user_id }}'">
-                <div class="user-id">{{ conv.profile_name or conv.user_id }}</div>
+    <!-- Charts -->
+    {% if total_users > 0 %}
+    <div class="chart-grid">
+
+        <!-- Skin type pie -->
+        <div class="chart-card">
+            <h2>Skin Types</h2>
+            {% if skin_type_labels %}
+            <div class="chart-container">
+                <canvas id="skinTypeChart"></canvas>
+            </div>
+            {% else %}
+            <p class="no-data">No data yet</p>
+            {% endif %}
+        </div>
+
+        <!-- Top concerns bar -->
+        <div class="chart-card">
+            <h2>Top Skin Concerns</h2>
+            {% if concern_labels %}
+            <div class="chart-container">
+                <canvas id="concernsChart"></canvas>
+            </div>
+            {% else %}
+            <p class="no-data">No data yet</p>
+            {% endif %}
+        </div>
+
+        <!-- Budget donut -->
+        <div class="chart-card">
+            <h2>Budget Range</h2>
+            {% if budget_labels %}
+            <div class="chart-container">
+                <canvas id="budgetChart"></canvas>
+            </div>
+            {% else %}
+            <p class="no-data">No data yet</p>
+            {% endif %}
+        </div>
+
+    </div>
+    {% endif %}
+
+    <!-- User list -->
+    <div class="card">
+        <div class="user-list-header">
+            <h2 style="border:none;padding:0;margin:0;">All Users</h2>
+            <span class="user-count">{{ total_users }} total</span>
+        </div>
+
+        {% if conversations %}
+        {% for conv in conversations %}
+        <div class="conversation-card" onclick="window.location.href='/dashboard/user/{{ conv.user_id }}'">
+            <div class="conv-left">
+                <div class="user-name">{{ conv.profile_name or conv.user_id }}</div>
                 {% if conv.profile_name %}
                 <div class="user-phone">{{ conv.user_id }}</div>
                 {% endif %}
-
                 <div>
-                    <span class="badge badge-state">{{ conv.state|replace('_', ' ')|title }}</span>
+                    <span class="badge badge-state-{{ conv.state }}">{{ conv.state|replace('_',' ')|title }}</span>
                     <span class="badge badge-language">{{ conv.language|upper }}</span>
-
                     {% if conv.skin_type != "Unknown" %}
                     <span class="badge badge-skin">{{ conv.skin_type|title }}</span>
                     {% endif %}
-
-                    {% for concern in conv.concerns %}
+                    {% for concern in conv.concerns[:3] %}
                     <span class="badge badge-concern">{{ concern }}</span>
                     {% endfor %}
+                    {% if conv.concerns|length > 3 %}
+                    <span class="badge badge-concern">+{{ conv.concerns|length - 3 }} more</span>
+                    {% endif %}
                 </div>
             </div>
-            {% endfor %}
-            {% else %}
-            <div class="empty-state">
-                <h2>No conversations yet</h2>
-                <p>Start chatting with GlowBot on WhatsApp to see conversations here!</p>
-            </div>
-            {% endif %}
+            <div class="conv-right">View &rsaquo;</div>
         </div>
+        {% endfor %}
+        {% else %}
+        <div class="empty-state">
+            <h2>No conversations yet</h2>
+            <p>Start chatting with GlowBot on WhatsApp to see users here.</p>
+        </div>
+        {% endif %}
     </div>
-</body>
 
+</div>
+
+<script>
+const PALETTE = ['#667eea','#f7971e','#43e97b','#4facfe','#f093fb','#a18cd1','#fda085','#89f7fe'];
+const PALETTE_LIGHT = ['#e8eaff','#fff3e0','#e8f5e9','#e3f2fd','#fce4ec','#ede7f6','#fbe9e7','#e0f7fa'];
+
+{% if skin_type_labels %}
+new Chart(document.getElementById('skinTypeChart'), {
+    type: 'pie',
+    data: {
+        labels: {{ skin_type_labels | tojson }},
+        datasets: [{
+            data: {{ skin_type_values | tojson }},
+            backgroundColor: PALETTE,
+            borderWidth: 2,
+            borderColor: '#fff',
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 14, padding: 10 } }
+        }
+    }
+});
+{% endif %}
+
+{% if concern_labels %}
+new Chart(document.getElementById('concernsChart'), {
+    type: 'bar',
+    data: {
+        labels: {{ concern_labels | tojson }},
+        datasets: [{
+            label: 'Users',
+            data: {{ concern_values | tojson }},
+            backgroundColor: '#667eea',
+            borderRadius: 6,
+            borderSkipped: false,
+        }]
+    },
+    options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { grid: { color: '#f0f0f0' }, ticks: { stepSize: 1 } },
+            y: { grid: { display: false } }
+        }
+    }
+});
+{% endif %}
+
+{% if budget_labels %}
+new Chart(document.getElementById('budgetChart'), {
+    type: 'doughnut',
+    data: {
+        labels: {{ budget_labels | tojson }},
+        datasets: [{
+            data: {{ budget_values | tojson }},
+            backgroundColor: ['#43e97b','#667eea','#f7971e'],
+            borderWidth: 2,
+            borderColor: '#fff',
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 14, padding: 10 } }
+        },
+        cutout: '60%'
+    }
+});
+{% endif %}
+</script>
+</body>
 </html>

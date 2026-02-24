@@ -1,14 +1,15 @@
 import logging
+from collections import Counter
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.repository import UserRepository
-from app.schemas import UserProfile
+from app.schemas import SkincareRoutine, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -21,41 +22,62 @@ repo = UserRepository()
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard_home(request: Request, db: AsyncSession = Depends(get_db)):
-    """Main dashboard showing all users and their conversations."""
     users = await repo.get_all_users(db)
 
     conversations = []
+    skin_type_counts: Counter = Counter()
+    concern_counts: Counter = Counter()
+    budget_counts: Counter = Counter()
+    phase_counts: Counter = Counter()
+
     for user in users:
         profile = UserProfile.model_validate(user.profile_json or {})
+        phase = user.conversation_phase or "interviewing"
+
         conversations.append({
             "user_id": user.phone_number,
             "profile_name": user.profile_name,
-            "state": user.conversation_phase or "interviewing",
-            "language": profile.language or "en",
+            "state": phase,
+            "language": profile.language or "english",
             "skin_type": profile.skin_type.value if profile.skin_type else "Unknown",
             "concerns": profile.concerns,
         })
 
+        phase_counts[phase] += 1
+        if profile.skin_type:
+            skin_type_counts[profile.skin_type.value] += 1
+        concern_counts.update(profile.concerns)
+        if profile.budget:
+            budget_counts[profile.budget.value] += 1
+
     total_users = len(users)
-    active_conversations = sum(
-        1 for c in conversations if c["state"] not in ("complete", "no conversation")
-    )
-    completed_conversations = sum(
-        1 for c in conversations if c["state"] == "complete"
-    )
+    completed = phase_counts.get("complete", 0)
+    in_interview = phase_counts.get("interviewing", 0)
+    in_review = phase_counts.get("reviewing", 0)
+    conversion_rate = round(completed / total_users * 100) if total_users else 0
+
+    top_concerns = concern_counts.most_common(10)
 
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "total_users": total_users,
-        "active_conversations": active_conversations,
-        "completed_conversations": completed_conversations,
+        "completed": completed,
+        "in_interview": in_interview,
+        "in_review": in_review,
+        "conversion_rate": conversion_rate,
         "conversations": conversations,
+        # Chart data (JSON-safe)
+        "skin_type_labels": list(skin_type_counts.keys()),
+        "skin_type_values": list(skin_type_counts.values()),
+        "concern_labels": [c[0] for c in top_concerns],
+        "concern_values": [c[1] for c in top_concerns],
+        "budget_labels": list(budget_counts.keys()),
+        "budget_values": list(budget_counts.values()),
     })
 
 
 @router.get("/user/{user_id}", response_class=HTMLResponse)
 async def user_detail(user_id: str, request: Request, db: AsyncSession = Depends(get_db)):
-    """User detail page showing all collected data."""
     user = await repo.get_user_by_phone(db, user_id)
 
     if not user:
@@ -63,13 +85,20 @@ async def user_detail(user_id: str, request: Request, db: AsyncSession = Depends
 
     profile = UserProfile.model_validate(user.profile_json or {})
 
-    # Load messages
+    # Parse generated routine if it exists
+    routine = None
+    if user.routine_json:
+        try:
+            routine = SkincareRoutine.model_validate(user.routine_json)
+        except Exception:
+            logger.warning(f"Failed to parse routine_json for user {user_id}")
+
     messages = await repo.get_messages_for_user(db, user.id)
     history = [{"role": msg.role.value, "content": msg.content} for msg in messages]
 
     context = {
         "state": user.conversation_phase or "interviewing",
-        "language": (profile.language or "en").upper(),
+        "language": (profile.language or "english").upper(),
         "skin_profile": {
             "skin_type": profile.skin_type.value if profile.skin_type else None,
             "concerns": profile.concerns,
@@ -105,4 +134,20 @@ async def user_detail(user_id: str, request: Request, db: AsyncSession = Depends
         "user_id": user_id,
         "context": context,
         "history": history,
+        "routine": routine,
     })
+
+
+@router.post("/user/{user_id}/reset")
+async def reset_user(user_id: str, db: AsyncSession = Depends(get_db)):
+    user = await repo.get_user_by_phone(db, user_id)
+    if not user:
+        return HTMLResponse("<h1>User not found</h1>", status_code=404)
+
+    user.profile_json = {}
+    user.conversation_phase = "interviewing"
+    user.message_history_json = []
+    user.routine_json = None
+    await repo.save(db, user)
+
+    return RedirectResponse(url=f"/dashboard/user/{user_id}", status_code=303)
