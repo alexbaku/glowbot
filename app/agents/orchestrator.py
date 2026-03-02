@@ -35,7 +35,7 @@ class OrchestratorDeps:
 
 
 orchestrator_agent = Agent(
-    "anthropic:claude-sonnet-4-5-20250929",
+    "anthropic:claude-sonnet-4-6",
     deps_type=OrchestratorDeps,
     output_type=OrchestratorResult,
 )

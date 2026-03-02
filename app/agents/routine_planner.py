@@ -16,7 +16,7 @@ if not os.environ.get("ANTHROPIC_API_KEY"):
     os.environ["ANTHROPIC_API_KEY"] = Settings().claude_api_key
 
 routine_planner_agent = Agent(
-    "anthropic:claude-sonnet-4-5-20250929",
+    "anthropic:claude-sonnet-4-6",
     deps_type=UserProfile,
     output_type=SkincareRoutine,
 )
