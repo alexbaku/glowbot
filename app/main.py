@@ -101,6 +101,11 @@ def _schedule_debounce(phone_number: str) -> None:
 async def _debounced_process(phone_number: str) -> None:
     """Wait for the debounce window, then process the buffer."""
     await asyncio.sleep(DEBOUNCE_SECONDS)
+    # Remove from tracking before processing so a new incoming message won't
+    # cancel this task while the Claude API call is in flight. CancelledError
+    # is a BaseException and bypasses the except-Exception handlers, causing
+    # silent failures when users send follow-up messages during a slow response.
+    _debounce_tasks.pop(phone_number, None)
     await _process_buffer(phone_number)
 
 
