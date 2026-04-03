@@ -29,6 +29,7 @@ class User(Base):
     conversation_phase = Column(String(20), default="interviewing")
     message_history_json = Column(JSON, default=list)
     routine_json = Column(JSON, default=None)
+    session_id = Column(String(36), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

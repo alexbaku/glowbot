@@ -7,7 +7,10 @@ Code gates enforce phase transitions and safety rules.
 """
 
 import logging
+import uuid
 from typing import Optional
+
+import kelet
 
 from pydantic_ai.messages import (
     ModelRequest,
@@ -165,163 +168,171 @@ class GlowBotService:
         try:
             # 1. Load or create user
             user = await repo.get_or_create(db, phone_number, profile_name)
+            if not user.session_id:
+                user.session_id = str(uuid.uuid4())
 
-            # 2. Deserialize state
-            profile = UserProfile.model_validate(user.profile_json or {})
-            phase = ConversationPhase(user.conversation_phase or "interviewing")
-            message_history = _deserialize_history(user.message_history_json or [])
-            routine_json = user.routine_json
+            async with kelet.agentic_session(session_id=user.session_id, user_id=phone_number):
+                # 2. Deserialize state
+                profile = UserProfile.model_validate(user.profile_json or {})
+                phase = ConversationPhase(user.conversation_phase or "interviewing")
+                message_history = _deserialize_history(user.message_history_json or [])
+                routine_json = user.routine_json
 
-            # 3. Detect language
-            detected = _detect_language(message)
-            if detected:
-                profile.language = detected
+                # 3. Detect language
+                detected = _detect_language(message)
+                if detected:
+                    profile.language = detected
 
-            # 4. Log incoming message
-            await repo.log_message(db, user.id, MessageRole.USER, message, media_url)
+                # 4. Log incoming message
+                await repo.log_message(db, user.id, MessageRole.USER, message, media_url)
 
-            # 5. Route: fast paths first, then agent
-            responses: list[str]
+                # 5. Route: fast paths first, then agent
+                responses: list[str]
 
-            # ── Fast path: restart ──
-            if _wants_restart(message):
-                profile = UserProfile(language=profile.language)
-                phase = ConversationPhase.INTERVIEWING
-                message_history = []
-                routine_json = None
-                if profile.language == "hebrew":
-                    responses = ["בואי נתחיל מחדש! ספרי לי קצת על העור שלך 😊"]
-                else:
-                    responses = ["Let's start fresh! Tell me a bit about your skin 😊"]
-
-            # ── Fast path: confirmation in REVIEWING phase ──
-            elif phase == ConversationPhase.REVIEWING and _is_confirmation(message):
-                logger.info("User confirmed profile — generating routine plan")
-                if profile.language == "hebrew":
-                    ack = "מעולה! אני מכינה לך עכשיו תוכנית טיפוח מותאמת אישית... ⏳"
-                else:
-                    ack = "Wonderful! Let me create your personalized skincare routine now... ⏳"
-
-                result = await routine_planner_agent.run(
-                    "Generate a complete personalized skincare routine based on my profile.",
-                    deps=profile,
-                )
-                routine = result.output
-                routine_json = routine.model_dump(mode="json")
-
-                short = _format_routine_short(routine)
-                if profile.language == "hebrew":
-                    cta = "רוצה את הגרסה המפורטת עם טיפים ליישום? פשוט תגידי *כן* 😊"
-                else:
-                    cta = "Want the detailed version with application tips? Just say *yes* 😊"
-
-                shopping = await product_linker.generate_shopping_list(routine, profile)
-                responses = [ack] + split_for_whatsapp(short) + [cta] + shopping
-                phase = ConversationPhase.COMPLETE
-
-            # ── Fast path: detailed routine request in COMPLETE phase ──
-            elif (
-                phase == ConversationPhase.COMPLETE
-                and _wants_details(message)
-                and routine_json
-            ):
-                routine = SkincareRoutine.model_validate(routine_json)
-                detailed = _format_routine_detailed(routine)
-                responses = split_for_whatsapp(detailed)
-
-            # ── Agent path: everything else ──
-            else:
-                # Handle legacy RECOMMENDING phase (shouldn't happen in new flow)
-                if phase == ConversationPhase.RECOMMENDING:
+                # ── Fast path: restart ──
+                if _wants_restart(message):
+                    profile = UserProfile(language=profile.language)
                     phase = ConversationPhase.INTERVIEWING
-
-                sufficient = _is_profile_sufficient(profile)
-                force = sufficient and profile.turns_since_sufficient >= 2
-
-                deps = OrchestratorDeps(
-                    profile=profile,
-                    phase=phase,
-                    profile_sufficient=sufficient,
-                    routine_json=routine_json,
-                    force_summarize=force,
-                )
-
-                # Build user prompt — multimodal if image present
-                if media_url:
-                    user_prompt: str | list = [
-                        {"type": "image", "source": {"type": "url", "url": media_url}},
-                        {"type": "text", "text": message or "Here's a photo of my skin"},
-                    ]
-                else:
-                    user_prompt = message
-
-                result = await orchestrator_agent.run(
-                    user_prompt,
-                    deps=deps,
-                    message_history=message_history,
-                )
-
-                # Apply incremental profile updates
-                if result.output.profile_updates:
-                    profile = _apply_profile_updates(profile, result.output.profile_updates)
-
-                # Capture routine if agent called generate_routine tool
-                if deps.routine_json != routine_json:
-                    routine_json = deps.routine_json
-                    phase = ConversationPhase.COMPLETE
-                    # Append shopping list when a fresh routine is generated mid-conversation
-                    fresh_routine = SkincareRoutine.model_validate(routine_json)
-                    shopping = await product_linker.generate_shopping_list(fresh_routine, profile)
-                    responses = split_for_whatsapp(result.output.response) + shopping
-                    message_history = message_history + list(result.new_messages())
-                    # Skip the default response assignment below
-                    user.profile_json = profile.model_dump(mode="json")
-                    user.conversation_phase = phase.value
-                    user.routine_json = routine_json
-                    trimmed = message_history[-(MAX_HISTORY_PAIRS * 2):]
-                    user.message_history_json = _serialize_history(trimmed)
-                    await repo.save(db, user)
-                    full_response = "\n\n".join(responses)
-                    await repo.log_message(db, user.id, MessageRole.ASSISTANT, full_response)
-                    logger.info(f"Handled message | User: {phone_number} | Phase: {phase.value} | Parts: {len(responses)}")
-                    return responses
-
-                # Code-controlled phase transitions
-                new_sufficient = _is_profile_sufficient(profile)
-
-                if phase == ConversationPhase.INTERVIEWING:
-                    if new_sufficient:
-                        profile.turns_since_sufficient += 1
-                        if profile.turns_since_sufficient >= 2 or force:
-                            # Force transition to REVIEWING
-                            phase = ConversationPhase.REVIEWING
-                            profile.turns_since_sufficient = 0
+                    message_history = []
+                    routine_json = None
+                    if profile.language == "hebrew":
+                        responses = ["בואי נתחיל מחדש! ספרי לי קצת על העור שלך 😊"]
                     else:
-                        profile.turns_since_sufficient = 0
+                        responses = ["Let's start fresh! Tell me a bit about your skin 😊"]
+                    await kelet.signal(kind="EVENT", source="HUMAN", trigger_name="user-restart")
+                    user.session_id = str(uuid.uuid4())
 
-                responses = split_for_whatsapp(result.output.response)
-                # Append shopping list if the agent called get_product_recommendations
-                if deps.shopping_list_messages:
-                    responses = responses + deps.shopping_list_messages
-                message_history = message_history + list(result.new_messages())
+                # ── Fast path: confirmation in REVIEWING phase ──
+                elif phase == ConversationPhase.REVIEWING and _is_confirmation(message):
+                    logger.info("User confirmed profile — generating routine plan")
+                    if profile.language == "hebrew":
+                        ack = "מעולה! אני מכינה לך עכשיו תוכנית טיפוח מותאמת אישית... ⏳"
+                    else:
+                        ack = "Wonderful! Let me create your personalized skincare routine now... ⏳"
 
-            # 6. Persist state
-            user.profile_json = profile.model_dump(mode="json")
-            user.conversation_phase = phase.value
-            user.routine_json = routine_json
-            trimmed = message_history[-(MAX_HISTORY_PAIRS * 2):] if message_history else []
-            user.message_history_json = _serialize_history(trimmed)
-            await repo.save(db, user)
+                    result = await routine_planner_agent.run(
+                        "Generate a complete personalized skincare routine based on my profile.",
+                        deps=profile,
+                    )
+                    routine = result.output
+                    routine_json = routine.model_dump(mode="json")
 
-            # 7. Log outgoing messages
-            full_response = "\n\n".join(responses)
-            await repo.log_message(db, user.id, MessageRole.ASSISTANT, full_response)
+                    short = _format_routine_short(routine)
+                    if profile.language == "hebrew":
+                        cta = "רוצה את הגרסה המפורטת עם טיפים ליישום? פשוט תגידי *כן* 😊"
+                    else:
+                        cta = "Want the detailed version with application tips? Just say *yes* 😊"
 
-            logger.info(
-                f"Handled message | User: {phone_number} | Phase: {phase.value} | "
-                f"Parts: {len(responses)}"
-            )
-            return responses
+                    shopping = await product_linker.generate_shopping_list(routine, profile)
+                    responses = [ack] + split_for_whatsapp(short) + [cta] + shopping
+                    phase = ConversationPhase.COMPLETE
+                    await kelet.signal(kind="EVENT", source="HUMAN", trigger_name="flow-complete")
+
+                # ── Fast path: detailed routine request in COMPLETE phase ──
+                elif (
+                    phase == ConversationPhase.COMPLETE
+                    and _wants_details(message)
+                    and routine_json
+                ):
+                    routine = SkincareRoutine.model_validate(routine_json)
+                    detailed = _format_routine_detailed(routine)
+                    responses = split_for_whatsapp(detailed)
+                    await kelet.signal(kind="EVENT", source="HUMAN", trigger_name="user-details-request")
+
+                # ── Agent path: everything else ──
+                else:
+                    # Handle legacy RECOMMENDING phase (shouldn't happen in new flow)
+                    if phase == ConversationPhase.RECOMMENDING:
+                        phase = ConversationPhase.INTERVIEWING
+
+                    sufficient = _is_profile_sufficient(profile)
+                    force = sufficient and profile.turns_since_sufficient >= 2
+
+                    deps = OrchestratorDeps(
+                        profile=profile,
+                        phase=phase,
+                        profile_sufficient=sufficient,
+                        routine_json=routine_json,
+                        force_summarize=force,
+                    )
+
+                    # Build user prompt — multimodal if image present
+                    if media_url:
+                        user_prompt: str | list = [
+                            {"type": "image", "source": {"type": "url", "url": media_url}},
+                            {"type": "text", "text": message or "Here's a photo of my skin"},
+                        ]
+                    else:
+                        user_prompt = message
+
+                    result = await orchestrator_agent.run(
+                        user_prompt,
+                        deps=deps,
+                        message_history=message_history,
+                    )
+
+                    # Apply incremental profile updates
+                    if result.output.profile_updates:
+                        profile = _apply_profile_updates(profile, result.output.profile_updates)
+
+                    # Capture routine if agent called generate_routine tool
+                    if deps.routine_json != routine_json:
+                        routine_json = deps.routine_json
+                        phase = ConversationPhase.COMPLETE
+                        await kelet.signal(kind="EVENT", source="HUMAN", trigger_name="flow-complete")
+                        # Append shopping list when a fresh routine is generated mid-conversation
+                        fresh_routine = SkincareRoutine.model_validate(routine_json)
+                        shopping = await product_linker.generate_shopping_list(fresh_routine, profile)
+                        responses = split_for_whatsapp(result.output.response) + shopping
+                        message_history = message_history + list(result.new_messages())
+                        # Skip the default response assignment below
+                        user.profile_json = profile.model_dump(mode="json")
+                        user.conversation_phase = phase.value
+                        user.routine_json = routine_json
+                        trimmed = message_history[-(MAX_HISTORY_PAIRS * 2):]
+                        user.message_history_json = _serialize_history(trimmed)
+                        await repo.save(db, user)
+                        full_response = "\n\n".join(responses)
+                        await repo.log_message(db, user.id, MessageRole.ASSISTANT, full_response)
+                        logger.info(f"Handled message | User: {phone_number} | Phase: {phase.value} | Parts: {len(responses)}")
+                        return responses
+
+                    # Code-controlled phase transitions
+                    new_sufficient = _is_profile_sufficient(profile)
+
+                    if phase == ConversationPhase.INTERVIEWING:
+                        if new_sufficient:
+                            profile.turns_since_sufficient += 1
+                            if profile.turns_since_sufficient >= 2 or force:
+                                # Force transition to REVIEWING
+                                phase = ConversationPhase.REVIEWING
+                                profile.turns_since_sufficient = 0
+                        else:
+                            profile.turns_since_sufficient = 0
+
+                    responses = split_for_whatsapp(result.output.response)
+                    # Append shopping list if the agent called get_product_recommendations
+                    if deps.shopping_list_messages:
+                        responses = responses + deps.shopping_list_messages
+                    message_history = message_history + list(result.new_messages())
+
+                # 6. Persist state
+                user.profile_json = profile.model_dump(mode="json")
+                user.conversation_phase = phase.value
+                user.routine_json = routine_json
+                trimmed = message_history[-(MAX_HISTORY_PAIRS * 2):] if message_history else []
+                user.message_history_json = _serialize_history(trimmed)
+                await repo.save(db, user)
+
+                # 7. Log outgoing messages
+                full_response = "\n\n".join(responses)
+                await repo.log_message(db, user.id, MessageRole.ASSISTANT, full_response)
+
+                logger.info(
+                    f"Handled message | User: {phone_number} | Phase: {phase.value} | "
+                    f"Parts: {len(responses)}"
+                )
+                return responses
 
         except Exception as e:
             logger.error(f"Error handling message: {e}", exc_info=True)

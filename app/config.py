@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     # API Keys
     claude_api_key: str
+    kelet_api_key: str
     twilio_account_sid: str
     twilio_auth_token: str
     twilio_phone_number: str
