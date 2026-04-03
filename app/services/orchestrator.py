@@ -199,7 +199,15 @@ class GlowBotService:
                 # 2. Deserialize state
                 profile = UserProfile.model_validate(user.profile_json or {})
                 phase = ConversationPhase(user.conversation_phase or "interviewing")
-                message_history = _deserialize_history(user.message_history_json or [])
+                raw_history = _deserialize_history(user.message_history_json or [])
+                # Trim before passing to Claude — the DB may hold a huge history
+                # from before limits were enforced.
+                trimmed_load = raw_history[-(MAX_HISTORY_PAIRS * 2):]
+                while trimmed_load:
+                    if len(json.dumps(_serialize_history(trimmed_load))) <= MAX_HISTORY_CHARS:
+                        break
+                    trimmed_load = trimmed_load[2:]
+                message_history = trimmed_load
                 routine_json = user.routine_json
 
                 # 3. Detect language
