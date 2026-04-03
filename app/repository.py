@@ -3,6 +3,7 @@ Simplified user repository — all DB access in one place.
 """
 
 import logging
+import uuid
 from typing import Optional
 
 from sqlalchemy import select
@@ -30,6 +31,7 @@ class UserRepository:
             user = User(
                 phone_number=phone_number,
                 profile_name=profile_name,
+                session_id=str(uuid.uuid4()),
             )
             db.add(user)
             await db.commit()

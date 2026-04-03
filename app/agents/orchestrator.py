@@ -32,6 +32,9 @@ class OrchestratorDeps:
     profile_sufficient: bool
     routine_json: Optional[dict] = None
     force_summarize: bool = False  # True when 2+ turns past sufficiency
+    shopping_list_messages: list = field(
+        default_factory=list
+    )  # Set by get_product_recommendations tool
 
 
 orchestrator_agent = Agent(
@@ -67,8 +70,14 @@ def _format_known(p: UserProfile) -> str:
     if p.health.sensitivities:
         known.append(f"Sensitivities: {', '.join(p.health.sensitivities)}")
     if p.health_screened:
-        if not p.health.allergies and not p.health.medications and not p.health.sensitivities:
-            known.append("Health screening: no allergies, medications, or sensitivities")
+        if (
+            not p.health.allergies
+            and not p.health.medications
+            and not p.health.sensitivities
+        ):
+            known.append(
+                "Health screening: no allergies, medications, or sensitivities"
+            )
     if p.sun_exposure:
         known.append(f"Sun exposure: {p.sun_exposure.value}")
     if p.budget:
@@ -114,7 +123,11 @@ def _format_missing(p: UserProfile) -> str:
     if not p.current_routine_morning and not p.current_routine_evening:
         missing.append("Current skincare routine (or confirmation they don't have one)")
 
-    return "\n".join(f"  - {m}" for m in missing) if missing else "  (all required data collected!)"
+    return (
+        "\n".join(f"  - {m}" for m in missing)
+        if missing
+        else "  (all required data collected!)"
+    )
 
 
 def _format_routine_for_prompt(routine: SkincareRoutine) -> str:
@@ -123,11 +136,15 @@ def _format_routine_for_prompt(routine: SkincareRoutine) -> str:
     if routine.morning:
         lines.append("Morning:")
         for step in routine.morning:
-            lines.append(f"  {step.order}. {step.step_name} — {step.ingredient_category}")
+            lines.append(
+                f"  {step.order}. {step.step_name} — {step.ingredient_category}"
+            )
     if routine.evening:
         lines.append("Evening:")
         for step in routine.evening:
-            lines.append(f"  {step.order}. {step.step_name} — {step.ingredient_category}")
+            lines.append(
+                f"  {step.order}. {step.step_name} — {step.ingredient_category}"
+            )
     if routine.ingredients_to_avoid:
         lines.append(f"Avoid: {', '.join(routine.ingredients_to_avoid)}")
     if routine.key_notes:
@@ -147,7 +164,9 @@ async def build_system_prompt(ctx: RunContext[OrchestratorDeps]) -> str:
     if p.language == "hebrew":
         lang_instruction = "The user speaks Hebrew. Respond in Hebrew."
     else:
-        lang_instruction = "Respond in the same language the user writes in. Default to English."
+        lang_instruction = (
+            "Respond in the same language the user writes in. Default to English."
+        )
 
     known = _format_known(p)
     missing = _format_missing(p)
@@ -237,6 +256,8 @@ The user has received their skincare routine. You can:
 - Recommend specific product types or ingredient categories
 - Explain why certain steps or ingredients were chosen
 - Suggest modifications based on new information
+- If the user asks for product links, where to buy, or a shopping list — call
+  the get_product_recommendations tool to generate their personalised iHerb list
 
 TOOL USAGE:
 - Use get_detailed_routine if the user wants more detail on their existing routine
@@ -340,6 +361,29 @@ async def get_detailed_routine(ctx: RunContext[OrchestratorDeps]) -> str:
         return "No routine has been generated yet."
     routine = SkincareRoutine.model_validate(ctx.deps.routine_json)
     return _format_routine_detailed(routine)
+
+
+@orchestrator_agent.tool
+async def get_product_recommendations(ctx: RunContext[OrchestratorDeps]) -> str:
+    """Generate a personalised iHerb shopping list for the user's current routine.
+    Call this when the user asks where to buy products, asks for product links,
+    or requests a shopping list."""
+    if not ctx.deps.routine_json:
+        return "No routine has been generated yet — generate a routine first."
+
+    from app.config import Settings
+    from app.schemas import SkincareRoutine
+    from app.services.product_linker import ProductLinkerService
+
+    routine = SkincareRoutine.model_validate(ctx.deps.routine_json)
+    service = ProductLinkerService(Settings())
+    messages = await service.generate_shopping_list(routine, ctx.deps.profile)
+
+    # Store formatted list in deps so the service layer can append it to responses
+    ctx.deps.shopping_list_messages = messages
+
+    # Return a short confirmation — the actual links are in deps.shopping_list_messages
+    return f"Shopping list generated with {len(messages)} message(s). Tell the user it's coming right up — the links will be sent automatically."
 
 
 # ── Routine formatting (ported from old orchestrator) ───────────────────────

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Optional
 
+import kelet
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -110,6 +111,7 @@ async def _debounced_process(phone_number: str) -> None:
 
 
 # ── App setup ────────────────────────────────────────────────────────────────
+settings = Settings()
 
 
 def _run_migrations():
@@ -129,6 +131,7 @@ def _run_migrations():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting up GlowBot...")
+    kelet.configure(api_key=settings.kelet_api_key)
     _run_migrations()
     await init_db()
     logger.info("Database initialized")
@@ -147,7 +150,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-settings = Settings()
 glowbot = GlowBotService()
 whatsapp_service = WhatsAppService(settings)
 
