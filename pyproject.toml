@@ -14,6 +14,7 @@ dependencies = [
     "kelet>=1.3.0",
     "psycopg2-binary>=2.9.11",
     "pydantic>=2.10.4",
+    "pillow>=11.0.0",
     "pydantic-ai>=1.59.0",
     "pydantic-settings>=2.7.1",
     "python-dotenv>=1.0.1",

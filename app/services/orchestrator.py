@@ -6,6 +6,7 @@ Thin dispatcher: fast paths for deterministic actions, agent path for everything
 Code gates enforce phase transitions and safety rules.
 """
 
+import asyncio
 import logging
 import re
 import uuid
@@ -86,10 +87,23 @@ def _is_confirmation(message: str) -> bool:
 
 
 def _wants_details(message: str) -> bool:
-    """Check if the user wants the detailed routine."""
+    """Check if the user is explicitly requesting the detailed routine view.
+
+    Short messages with detail-related keywords are almost certainly routine
+    detail requests (e.g. "more details please"). Long messages that merely
+    contain the word "details" mid-sentence are asking something else entirely
+    (e.g. "on the details on the product the manufacturer recommends...").
+    """
     lower = message.lower().strip()
-    signals = ["detailed", "details", "more", "tips", "פירוט", "עוד"]
-    return any(sig in lower for sig in signals)
+    # Short messages with detail-related keywords → routine detail request
+    if len(lower) <= 60 and any(sig in lower for sig in ["detailed", "details", "more", "tips", "פירוט", "עוד"]):
+        return True
+    # Explicit multi-word phrases work regardless of message length
+    explicit = [
+        "show me the details", "give me details", "want details",
+        "full routine", "complete routine", "detailed routine", "detailed version",
+    ]
+    return any(phrase in lower for phrase in explicit)
 
 
 def _wants_restart(message: str) -> bool:
@@ -223,9 +237,12 @@ class GlowBotService:
                         else:
                             ack = "Wonderful! Let me create your personalized skincare routine now... ⏳"
 
-                        result = await routine_planner_agent.run(
-                            "Generate a complete personalized skincare routine based on my profile.",
-                            deps=profile,
+                        result = await asyncio.wait_for(
+                            routine_planner_agent.run(
+                                "Generate a complete personalized skincare routine based on my profile.",
+                                deps=profile,
+                            ),
+                            timeout=120.0,
                         )
                         routine = result.output
                         routine_json = routine.model_dump(mode="json")
@@ -277,10 +294,13 @@ class GlowBotService:
                     else:
                         user_prompt = message
 
-                    result = await orchestrator_agent.run(
-                        user_prompt,
-                        deps=deps,
-                        message_history=message_history,
+                    result = await asyncio.wait_for(
+                        orchestrator_agent.run(
+                            user_prompt,
+                            deps=deps,
+                            message_history=message_history,
+                        ),
+                        timeout=90.0,
                     )
 
                     # Apply incremental profile updates

@@ -279,8 +279,15 @@ PROFILE:
 
 PERSONALITY:
 - Warm, professional, genuinely interested in helping
-- Keep messages concise — this is WhatsApp, not email
 - Reference what the user already told you
+
+MESSAGE LENGTH — CRITICAL:
+- This is WhatsApp, not a blog post. Keep every response SHORT.
+- Regular answers: 2–4 sentences max, or a tight bullet list (3–5 items).
+- Never repeat the user's full routine back to them in a response — they already have it.
+- Never write long paragraphs. If you need to explain something, use one sentence per point.
+- If the user asks something that requires detail, give them the key point first, then offer to elaborate.
+- Aim for under 400 characters per response. Never exceed 800 characters.
 
 {phase_block}
 
@@ -355,12 +362,13 @@ async def generate_routine(ctx: RunContext[OrchestratorDeps]) -> str:
 
 @orchestrator_agent.tool
 async def get_detailed_routine(ctx: RunContext[OrchestratorDeps]) -> str:
-    """Return the detailed version of the user's current routine with
-    application tips, timing, and ingredient details."""
+    """Return the user's routine steps with ingredient categories and tips.
+    Use this to answer specific questions about their routine — do NOT paste
+    the entire output into your response. Pick the relevant step(s) and answer concisely."""
     if not ctx.deps.routine_json:
         return "No routine has been generated yet."
     routine = SkincareRoutine.model_validate(ctx.deps.routine_json)
-    return _format_routine_detailed(routine)
+    return _format_routine_for_prompt(routine)
 
 
 @orchestrator_agent.tool

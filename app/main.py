@@ -41,6 +41,7 @@ class _PendingMessage:
 
 _message_buffers: dict[str, list[_PendingMessage]] = {}
 _debounce_tasks: dict[str, asyncio.Task] = {}
+_user_locks: dict[str, asyncio.Lock] = {}
 
 
 async def _process_buffer(phone_number: str) -> None:
@@ -50,6 +51,13 @@ async def _process_buffer(phone_number: str) -> None:
 
     if not messages:
         return
+
+    # Acquire per-user lock so only one Claude call runs at a time per user.
+    # If a previous call is still in flight, this waits until it finishes
+    # rather than launching a concurrent call that would read stale state.
+    if phone_number not in _user_locks:
+        _user_locks[phone_number] = asyncio.Lock()
+    lock = _user_locks[phone_number]
 
     # Combine text from all buffered messages (skip empty strings from image-only messages)
     combined_text = "\n\n".join(m.text for m in messages if m.text)
@@ -67,25 +75,26 @@ async def _process_buffer(phone_number: str) -> None:
         f"{combined_text[:60]!r}..."
     )
 
-    try:
-        async with AsyncSessionLocal() as db:
-            responses = await glowbot.handle_message(
-                phone_number=phone_number,
-                message=combined_text,
-                db=db,
-                media_url=media_url,
-                image_data=image_data,
-                image_content_type=image_content_type,
-                profile_name=profile_name,
-            )
+    async with lock:
+        try:
+            async with AsyncSessionLocal() as db:
+                responses = await glowbot.handle_message(
+                    phone_number=phone_number,
+                    message=combined_text,
+                    db=db,
+                    media_url=media_url,
+                    image_data=image_data,
+                    image_content_type=image_content_type,
+                    profile_name=profile_name,
+                )
 
-        for part in responses:
-            await whatsapp_service.send_message(to=phone_number, message=part)
+            for part in responses:
+                await whatsapp_service.send_message(to=phone_number, message=part)
 
-        logger.info(f"Sent {len(responses)} message(s) to {phone_number}")
+            logger.info(f"Sent {len(responses)} message(s) to {phone_number}")
 
-    except Exception as e:
-        logger.error(f"Error processing buffered messages for {phone_number}: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Error processing buffered messages for {phone_number}: {e}", exc_info=True)
 
 
 def _schedule_debounce(phone_number: str) -> None:
