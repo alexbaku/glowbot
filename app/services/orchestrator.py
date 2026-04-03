@@ -7,6 +7,7 @@ Code gates enforce phase transitions and safety rules.
 """
 
 import asyncio
+import json
 import logging
 import re
 import uuid
@@ -38,7 +39,10 @@ from app.services.product_linker import ProductLinkerService
 logger = logging.getLogger(__name__)
 
 # Maximum exchanges to feed back as message_history (user+assistant pairs)
-MAX_HISTORY_PAIRS = 20
+MAX_HISTORY_PAIRS = 6
+# Hard cap: drop oldest messages until serialized history fits within this limit.
+# Keeps the Claude request small enough to avoid context-window errors and timeouts.
+MAX_HISTORY_CHARS = 12_000
 
 repo = UserRepository()
 product_linker = ProductLinkerService(Settings())
@@ -337,6 +341,13 @@ class GlowBotService:
                 user.conversation_phase = phase.value
                 user.routine_json = routine_json
                 trimmed = message_history[-(MAX_HISTORY_PAIRS * 2):] if message_history else []
+                # Also enforce a character cap: drop oldest messages until the
+                # serialized JSON fits within MAX_HISTORY_CHARS.
+                while trimmed:
+                    serialized = _serialize_history(trimmed)
+                    if len(json.dumps(serialized)) <= MAX_HISTORY_CHARS:
+                        break
+                    trimmed = trimmed[2:]  # drop one user+assistant pair from the front
                 user.message_history_json = _serialize_history(trimmed)
                 await repo.save(db, user)
 
