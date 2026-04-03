@@ -32,7 +32,9 @@ class OrchestratorDeps:
     profile_sufficient: bool
     routine_json: Optional[dict] = None
     force_summarize: bool = False  # True when 2+ turns past sufficiency
-    shopping_list_messages: list = field(default_factory=list)  # Set by get_product_recommendations tool
+    shopping_list_messages: list = field(
+        default_factory=list
+    )  # Set by get_product_recommendations tool
 
 
 orchestrator_agent = Agent(
@@ -68,8 +70,14 @@ def _format_known(p: UserProfile) -> str:
     if p.health.sensitivities:
         known.append(f"Sensitivities: {', '.join(p.health.sensitivities)}")
     if p.health_screened:
-        if not p.health.allergies and not p.health.medications and not p.health.sensitivities:
-            known.append("Health screening: no allergies, medications, or sensitivities")
+        if (
+            not p.health.allergies
+            and not p.health.medications
+            and not p.health.sensitivities
+        ):
+            known.append(
+                "Health screening: no allergies, medications, or sensitivities"
+            )
     if p.sun_exposure:
         known.append(f"Sun exposure: {p.sun_exposure.value}")
     if p.budget:
@@ -115,7 +123,11 @@ def _format_missing(p: UserProfile) -> str:
     if not p.current_routine_morning and not p.current_routine_evening:
         missing.append("Current skincare routine (or confirmation they don't have one)")
 
-    return "\n".join(f"  - {m}" for m in missing) if missing else "  (all required data collected!)"
+    return (
+        "\n".join(f"  - {m}" for m in missing)
+        if missing
+        else "  (all required data collected!)"
+    )
 
 
 def _format_routine_for_prompt(routine: SkincareRoutine) -> str:
@@ -124,11 +136,15 @@ def _format_routine_for_prompt(routine: SkincareRoutine) -> str:
     if routine.morning:
         lines.append("Morning:")
         for step in routine.morning:
-            lines.append(f"  {step.order}. {step.step_name} — {step.ingredient_category}")
+            lines.append(
+                f"  {step.order}. {step.step_name} — {step.ingredient_category}"
+            )
     if routine.evening:
         lines.append("Evening:")
         for step in routine.evening:
-            lines.append(f"  {step.order}. {step.step_name} — {step.ingredient_category}")
+            lines.append(
+                f"  {step.order}. {step.step_name} — {step.ingredient_category}"
+            )
     if routine.ingredients_to_avoid:
         lines.append(f"Avoid: {', '.join(routine.ingredients_to_avoid)}")
     if routine.key_notes:
@@ -148,7 +164,9 @@ async def build_system_prompt(ctx: RunContext[OrchestratorDeps]) -> str:
     if p.language == "hebrew":
         lang_instruction = "The user speaks Hebrew. Respond in Hebrew."
     else:
-        lang_instruction = "Respond in the same language the user writes in. Default to English."
+        lang_instruction = (
+            "Respond in the same language the user writes in. Default to English."
+        )
 
     known = _format_known(p)
     missing = _format_missing(p)
