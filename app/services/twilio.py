@@ -83,17 +83,6 @@ class WhatsAppService:
         return raw_bytes, content_type
 
 
-def _compress_image(data: bytes, max_px: int = 1024, quality: int = 85) -> tuple[bytes, str]:
-    """Resize image so longest side <= max_px and re-encode as JPEG."""
-    img = Image.open(io.BytesIO(data))
-    # Convert to RGB so we can always save as JPEG (handles PNG/WebP with alpha)
-    if img.mode not in ("RGB", "L"):
-        img = img.convert("RGB")
-    img.thumbnail((max_px, max_px), Image.LANCZOS)
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=quality, optimize=True)
-    return buf.getvalue(), "image/jpeg"
-
     def extract_media_url(self, request_data: dict) -> Optional[str]:
         """Extract media URL from Twilio request if present"""
         num_media = int(request_data.get('NumMedia', 0))
@@ -111,3 +100,15 @@ def _compress_image(data: bytes, max_px: int = 1024, quality: int = 85) -> tuple
             "profile_name": request_data.get('ProfileName'),
             "timestamp": request_data.get('Timestamp')
         }
+
+
+def _compress_image(data: bytes, max_px: int = 1024, quality: int = 85) -> tuple[bytes, str]:
+    """Resize image so longest side <= max_px and re-encode as JPEG."""
+    img = Image.open(io.BytesIO(data))
+    # Convert to RGB so we can always save as JPEG (handles PNG/WebP with alpha)
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    img.thumbnail((max_px, max_px), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality, optimize=True)
+    return buf.getvalue(), "image/jpeg"
