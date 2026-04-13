@@ -207,6 +207,16 @@ class GlowBotService:
                     if len(json.dumps(_serialize_history(trimmed_load))) <= MAX_HISTORY_CHARS:
                         break
                     trimmed_load = trimmed_load[2:]
+                # Drop any leading messages that start with tool-return parts — these are
+                # orphaned tool results whose matching tool_use was trimmed away.
+                # Claude rejects requests where a tool_result has no preceding tool_use.
+                while trimmed_load:
+                    first = trimmed_load[0]
+                    parts = getattr(first, 'parts', [])
+                    if parts and getattr(parts[0], 'part_kind', None) == 'tool-return':
+                        trimmed_load = trimmed_load[1:]
+                    else:
+                        break
                 message_history = trimmed_load
                 routine_json = user.routine_json
 
