@@ -223,8 +223,10 @@ MINIMUM DATA REQUIRED (all must be collected):
 7. Budget range
 8. Current skincare routine (or confirmation they don't have one)
 
-IMPORTANT:
-- Extract any new profile data into profile_updates
+CRITICAL RULES:
+- NEVER ask about anything already listed in COLLECTED SO FAR above — that data is confirmed
+- ONLY ask about items still in STILL NEEDED
+- Extract any new profile data into profile_updates every single turn
 - Only set fields that changed — null means "no change"
 - For health fields (is_pregnant, is_nursing, etc.), set the specific field
 - Set health_screened=true once you've asked about allergies/sensitivities/medications"""

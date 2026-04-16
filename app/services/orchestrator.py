@@ -38,11 +38,13 @@ from app.services.product_linker import ProductLinkerService
 
 logger = logging.getLogger(__name__)
 
-# Maximum exchanges to feed back as message_history (user+assistant pairs)
-MAX_HISTORY_PAIRS = 6
+# Maximum exchanges to feed back as message_history (user+assistant pairs).
+# A full interview takes ~10-12 exchanges so keep enough to cover the whole flow.
+# Image binary is stripped before saving (see _strip_binary_from_history) so
+# these limits no longer need to be defensive against photo size blowups.
+MAX_HISTORY_PAIRS = 12
 # Hard cap: drop oldest messages until serialized history fits within this limit.
-# Keeps the Claude request small enough to avoid context-window errors and timeouts.
-MAX_HISTORY_CHARS = 12_000
+MAX_HISTORY_CHARS = 24_000
 
 repo = UserRepository()
 product_linker = ProductLinkerService(Settings())
@@ -176,6 +178,25 @@ def _apply_profile_updates(profile: UserProfile, updates) -> UserProfile:
         else:
             setattr(profile, field_name, value)
     return profile
+
+
+def _strip_binary_from_history(messages: list) -> list:
+    """Remove messages containing BinaryContent (images) before persisting history.
+
+    Raw image bytes serialise to base64 and can be 200 KB+ per photo — easily
+    10–20× the entire history char budget. Keeping them in the DB would trigger
+    the trimming loop to wipe all context on the very next turn.
+
+    Image analysis is already captured in profile.image_analysis so the binary
+    data is not needed again after the turn in which it was processed.
+    """
+    filtered = []
+    for msg in messages:
+        parts = getattr(msg, "parts", [])
+        if any(isinstance(p, BinaryContent) for p in parts):
+            continue
+        filtered.append(msg)
+    return filtered
 
 
 def _serialize_history(history: list) -> list:
@@ -405,7 +426,8 @@ class GlowBotService:
                     # Append shopping list if the agent called get_product_recommendations
                     if deps.shopping_list_messages:
                         responses = responses + deps.shopping_list_messages
-                    message_history = message_history + list(result.new_messages())
+                    new_msgs = _strip_binary_from_history(list(result.new_messages()))
+                    message_history = message_history + new_msgs
 
                 # 6. Persist state
                 user.profile_json = profile.model_dump(mode="json")
