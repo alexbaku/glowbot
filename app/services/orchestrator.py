@@ -110,6 +110,37 @@ def _wants_details(message: str) -> bool:
     return any(phrase in lower for phrase in explicit)
 
 
+DISCLAIMER_EN = (
+    "👋 Welcome to *GlowBot*!\n\n"
+    "Before we start, please read this:\n\n"
+    "GlowBot provides personalized skincare *recommendations* only. "
+    "It is *not* a substitute for professional medical or dermatological advice. "
+    "Always consult a qualified healthcare provider for medical concerns, skin conditions, or if you are pregnant.\n\n"
+    "By continuing you confirm that you understand this and agree to use GlowBot's suggestions at your own discretion.\n\n"
+    "Reply *I agree* to get started 💛"
+)
+
+DISCLAIMER_HE = (
+    "👋 ברוכה הבאה ל-*GlowBot*!\n\n"
+    "לפני שנתחיל, חשוב לקרוא:\n\n"
+    "GlowBot מספקת המלצות טיפוח בלבד. "
+    "אין לראות בה תחליף לייעוץ רפואי או דרמטולוגי מקצועי. "
+    "בכל עניין רפואי, מצב עור, או אם את בהריון — יש להתייעץ עם רופא מוסמך.\n\n"
+    "בהמשך את מאשרת שהבנת זאת ומסכימה להשתמש בהמלצות לפי שיקול דעתך.\n\n"
+    "השיבי *אני מסכימה* כדי להתחיל 💛"
+)
+
+
+def _is_terms_agreement(message: str) -> bool:
+    """Check if the message is an explicit agreement to the disclaimer."""
+    lower = message.lower().strip()
+    signals = [
+        "i agree", "agree", "agreed", "yes i agree", "ok i agree", "i accept", "accept",
+        "אני מסכימה", "אני מסכים", "מסכימה", "מסכים", "מאשרת", "מאשר",
+    ]
+    return any(sig in lower for sig in signals)
+
+
 def _wants_restart(message: str) -> bool:
     """Check if the user wants to start over.
 
@@ -231,9 +262,26 @@ class GlowBotService:
                 # 5. Route: fast paths first, then agent
                 responses: list[str]
 
+                # ── Fast path: disclaimer ──
+                if not profile.terms_accepted:
+                    if _is_terms_agreement(message):
+                        profile.terms_accepted = True
+                        if profile.language == "hebrew":
+                            responses = ["תודה! בואי נתחיל 😊 ספרי לי קצת על העור שלך — מה הדאגה העיקרית שלך?"]
+                        else:
+                            responses = ["Thank you! Let's get started 😊 Tell me a bit about your skin — what's your main concern?"]
+                    else:
+                        responses = [DISCLAIMER_HE if profile.language == "hebrew" else DISCLAIMER_EN]
+                    user.profile_json = profile.model_dump(mode="json")
+                    user.conversation_phase = phase.value
+                    await repo.save(db, user)
+                    full_response = "\n\n".join(responses)
+                    await repo.log_message(db, user.id, MessageRole.ASSISTANT, full_response)
+                    return responses
+
                 # ── Fast path: restart ──
                 if _wants_restart(message):
-                    profile = UserProfile(language=profile.language)
+                    profile = UserProfile(language=profile.language, terms_accepted=True)
                     phase = ConversationPhase.INTERVIEWING
                     message_history = []
                     routine_json = None
@@ -327,7 +375,12 @@ class GlowBotService:
 
                     # Apply incremental profile updates
                     if result.output.profile_updates:
+                        updates_dict = result.output.profile_updates.model_dump(exclude_none=True)
+                        if updates_dict:
+                            logger.info(f"Profile updates | User: {phone_number} | Fields: {list(updates_dict.keys())}")
                         profile = _apply_profile_updates(profile, result.output.profile_updates)
+                    else:
+                        logger.debug(f"No profile updates returned | User: {phone_number} | Phase: {phase.value}")
 
                     # Capture routine if agent called generate_routine tool
                     if deps.routine_json != routine_json:

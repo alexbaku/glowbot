@@ -89,6 +89,7 @@ class UserProfile(BaseModel):
     language: str = "english"
     health_screened: bool = False  # True once allergies/sensitivities/meds addressed
     turns_since_sufficient: int = 0  # tracks turns after all required fields filled
+    terms_accepted: bool = False  # True once user explicitly agrees to disclaimer
 
 
 # ── Agent result types ───────────────────────────────────────────────────────
