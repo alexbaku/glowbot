@@ -415,8 +415,9 @@ class GlowBotService:
                     if phase == ConversationPhase.INTERVIEWING:
                         if new_sufficient:
                             profile.turns_since_sufficient += 1
-                            if profile.turns_since_sufficient >= 2 or force:
-                                # Force transition to REVIEWING
+                            if force:
+                                # force was True this turn → agent just ran the mandatory
+                                # summary prompt — now safe to move to REVIEWING
                                 phase = ConversationPhase.REVIEWING
                                 profile.turns_since_sufficient = 0
                         else:

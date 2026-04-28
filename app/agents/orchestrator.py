@@ -379,8 +379,15 @@ async def get_detailed_routine(ctx: RunContext[OrchestratorDeps]) -> str:
 
 
 @orchestrator_agent.tool
-async def get_product_recommendations(ctx: RunContext[OrchestratorDeps]) -> str:
-    """Generate a personalised iHerb shopping list for the user's current routine.
+async def get_product_recommendations(
+    ctx: RunContext[OrchestratorDeps],
+    step_names: list[str] | None = None,
+) -> str:
+    """Generate a personalised iHerb shopping list.
+    - If the user asks for recommendations for a SPECIFIC product or step (e.g. "cleanser",
+      "vitamin C serum"), pass step_names with the matching step name(s) so only those
+      steps are covered.
+    - If the user asks for a full shopping list / all products, omit step_names (or pass None).
     Call this when the user asks where to buy products, asks for product links,
     or requests a shopping list."""
     if not ctx.deps.routine_json:
@@ -391,6 +398,24 @@ async def get_product_recommendations(ctx: RunContext[OrchestratorDeps]) -> str:
     from app.services.product_linker import ProductLinkerService
 
     routine = SkincareRoutine.model_validate(ctx.deps.routine_json)
+
+    # Filter to the requested step(s) if the user asked about a specific product
+    if step_names:
+        names_lower = {n.lower() for n in step_names}
+        filtered_morning = [
+            s for s in routine.morning if s.step_name.lower() in names_lower
+            or any(name in s.step_name.lower() for name in names_lower)
+        ]
+        filtered_evening = [
+            s for s in routine.evening if s.step_name.lower() in names_lower
+            or any(name in s.step_name.lower() for name in names_lower)
+        ]
+        # Fall back to full routine if no steps matched (fuzzy miss)
+        if filtered_morning or filtered_evening:
+            routine = routine.model_copy(
+                update={"morning": filtered_morning, "evening": filtered_evening}
+            )
+
     service = ProductLinkerService(Settings())
     messages = await service.generate_shopping_list(routine, ctx.deps.profile)
 
