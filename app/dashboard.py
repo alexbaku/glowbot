@@ -58,15 +58,13 @@ async def dashboard_home(request: Request, db: AsyncSession = Depends(get_db)):
 
     top_concerns = concern_counts.most_common(10)
 
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "dashboard.html", {
         "total_users": total_users,
         "completed": completed,
         "in_interview": in_interview,
         "in_review": in_review,
         "conversion_rate": conversion_rate,
         "conversations": conversations,
-        # Chart data (JSON-safe)
         "skin_type_labels": list(skin_type_counts.keys()),
         "skin_type_values": list(skin_type_counts.values()),
         "concern_labels": [c[0] for c in top_concerns],
@@ -129,8 +127,7 @@ async def user_detail(user_id: str, request: Request, db: AsyncSession = Depends
         },
     }
 
-    return templates.TemplateResponse("user_detail.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "user_detail.html", {
         "user_id": user_id,
         "context": context,
         "history": history,
