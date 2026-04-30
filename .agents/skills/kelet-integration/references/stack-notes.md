@@ -1,7 +1,8 @@
 # Kelet Stack Implementation Notes
 
 ## Contents
-- [Python](#python): extras, `kelet.agent()`, streaming pattern
+
+- [Python](#python): `kelet.agent()`, streaming pattern
 - [TypeScript/Node.js](#typescriptnodejs): callback-based `agenticSession`, OTEL peers
 - [Next.js](#nextjs): `KeletExporter`, two silent configs
 - [Multi-project apps](#multi-project-apps)
@@ -14,14 +15,21 @@
 
 ## Python
 
-`kelet.configure()` at startup auto-instruments pydantic-ai/Anthropic/OpenAI/LangChain. Each LLM framework extra must
-be installed (`kelet[anthropic]`, `kelet[openai]`, etc.) — if missing, `configure()` silently skips that library.
-`agentic_session()` is **required whenever you own the orchestration loop**. If a supported framework orchestrates for
-you, sessions are inferred automatically — no wrapper needed. See Sessions section in SKILL.md.
+`kelet.configure()` at startup auto-instruments pydantic-ai/Anthropic/OpenAI/LangChain — spans capture, but the
+session ID is only inferred when the framework owns it.
+All params default to env vars; `kelet.configure()` with no args works when `KELET_API_KEY` is set.
+`agentic_session(session_id=...)` is **required whenever the app owns the session ID** (Redis/DB/server-issued UUID)
+or you own the orchestration loop — auto-instrumentation alone can't link your ID to spans. Wrap at the route/handler
+that bounds the conversation. See Sessions section in SKILL.md.
 
 `kelet.agent(name=...)` — use when: (a) multiple agents run in one session and need separate attribution, or (b) your
 framework doesn't expose agent names natively (pydantic-ai does; OpenAI/Anthropic/raw SDKs don't — Kelet can't infer
 it). Logfire users: `kelet.configure()` detects the existing `TracerProvider` — no conflict.
+
+**Bare LiteLLM:** traces are auto-captured, but LiteLLM does not natively propagate session/agent context into its
+spans. If LiteLLM is called directly (not through another instrumented framework like Google ADK), wrap calls in
+`agentic_session()` (and optionally `kelet.agent()`) to group them. When LiteLLM runs under another framework that
+sets context, no extra wrapping is needed.
 
 **Streaming:** wrap the **entire** generator body (not the caller), including the final sentinel — trailing spans are
 silently lost otherwise:
@@ -46,6 +54,7 @@ agenticSession({ sessionId, userId? }, async () => { ... })  // returns callback
 ```
 
 Requires OTEL peer deps alongside `kelet`:
+
 ```
 @opentelemetry/api @opentelemetry/sdk-trace-node @opentelemetry/exporter-trace-otlp-http
 ```
@@ -57,7 +66,7 @@ Requires OTEL peer deps alongside `kelet`:
 Use `KeletExporter` in `instrumentation.ts` via `@vercel/otel`:
 
 ```ts
-new KeletExporter({ apiKey, project })
+new KeletExporter({apiKey, project})
 ```
 
 Two required steps often missed (both **silent** if omitted):
@@ -90,11 +99,11 @@ VoteFeedback requires React. Before concluding "no React = no VoteFeedback", che
 interop (Astro via `@astrojs/react`, SvelteKit via `svelte-preprocess`, etc.). This is a major architectural decision
 — present the tradeoffs and let the developer choose before proceeding:
 
-| Option | Trade-offs |
-|--------|------------|
-| **Add React (recommended)** — e.g. `@astrojs/react` | Official SDK, best integration, richer UX — adds React as a dependency but most frameworks support React islands/interop |
-| Implement feedback UI ad hoc in the existing stack | No new dependencies — VoteFeedback is conceptually just 👍/👎 buttons that POST a signal to the Kelet REST API. Valid if adding React is genuinely not feasible |
-| Skip frontend feedback for now | Fastest — server-side tracing still works; add feedback later |
+| Option                                              | Trade-offs                                                                                                                                                      |
+|-----------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Add React (recommended)** — e.g. `@astrojs/react` | Official SDK, best integration, richer UX — adds React as a dependency but most frameworks support React islands/interop                                        |
+| Implement feedback UI ad hoc in the existing stack  | No new dependencies — VoteFeedback is conceptually just 👍/👎 buttons that POST a signal to the Kelet REST API. Valid if adding React is genuinely not feasible |
+| Skip frontend feedback for now                      | Fastest — server-side tracing still works; add feedback later                                                                                                   |
 
 Do not assume — always present the options and let them choose.
 
@@ -118,5 +127,5 @@ AI-generated updates `"ai_generation"` and user edits `"manual_refinement"`. Wit
 look identical and Kelet can't distinguish "user accepted AI output" from "user corrected it."
 
 **`useKeletSignal()`**: returns a `sendSignal(params)` function for sending signals directly from React event
-handlers — abandon, rephrase, accept, copy. Must be inside `KeletProvider`. Preferred over a backend endpoint for
-browser-observable events (no round-trip needed).
+handlers — abandon, accept, copy (explicit-trigger only; rephrase belongs to the LLM synthetic layer, not here).
+Must be inside `KeletProvider`. Preferred over a backend endpoint for browser-observable events (no round-trip needed).

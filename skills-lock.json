@@ -4,7 +4,8 @@
     "kelet-integration": {
       "source": "Kelet-ai/skills",
       "sourceType": "github",
-      "computedHash": "29018dddb23c7ca6deebf106116a145b0d025e25a12f303dab50058f1388477d"
+      "skillPath": "skills/kelet-integration/SKILL.md",
+      "computedHash": "d8ed31a4c420a0341a3a91d6d48cd7b32951f5015de36cc47da421762ea963c7"
     }
   }
 }

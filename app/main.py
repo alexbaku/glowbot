@@ -94,7 +94,10 @@ async def _process_buffer(phone_number: str) -> None:
             logger.info(f"Sent {len(responses)} message(s) to {phone_number}")
 
         except Exception as e:
-            logger.error(f"Error processing buffered messages for {phone_number}: {e}", exc_info=True)
+            logger.error(
+                f"Error processing buffered messages for {phone_number}: {e}",
+                exc_info=True,
+            )
 
 
 def _schedule_debounce(phone_number: str) -> None:
@@ -128,6 +131,7 @@ def _run_migrations():
     logger.info("Running database migrations...")
     try:
         from alembic.config import Config
+
         from alembic import command
 
         alembic_cfg = Config("alembic.ini")
@@ -140,7 +144,7 @@ def _run_migrations():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting up GlowBot...")
-    kelet.configure(api_key=settings.kelet_api_key)
+    kelet.configure(api_key=settings.kelet_api_key, project=settings.kelet_project)
     _run_migrations()
     await init_db()
     logger.info("Database initialized")
@@ -192,8 +196,12 @@ async def whatsapp_webhook(
         image_content_type = "image/jpeg"
         if media_url:
             try:
-                image_data, image_content_type = await whatsapp_service.download_media(media_url)
-                logger.info(f"Downloaded media ({image_content_type}, {len(image_data)} bytes)")
+                image_data, image_content_type = await whatsapp_service.download_media(
+                    media_url
+                )
+                logger.info(
+                    f"Downloaded media ({image_content_type}, {len(image_data)} bytes)"
+                )
             except Exception as e:
                 logger.warning(f"Failed to download media from {media_url}: {e}")
 

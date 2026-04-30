@@ -1,81 +1,48 @@
 # Kelet Signals Reference
 
 ## Contents
-- [Signal Kinds](#signal-kinds) and [Sources](#signal-sources)
-- [Synthetic Signals: Platform vs Code](#synthetic-signals-platform-vs-code)
-- [Signal Brainstorming: 3–5 per flow](#signal-brainstorming-35-per-flow)
-- [Required Fields](#required-fields)
-- [Selecting Synthetic Evaluators](#selecting-synthetic-evaluators) — framework + preset list
+
+- [Signal Enums + Required Fields](#signal-enums--required-fields)
+- [Selecting Synthetic Evaluators](#selecting-synthetic-evaluators) — preset list
 - [Synthetic Deeplink Generation](#synthetic-deeplink-generation)
 - [Naming Conventions](#naming-conventions)
 
 ---
 
-## Signal Kinds
+## Signal Enums + Required Fields
 
-| Kind        | Use when                                                                |
-|-------------|-------------------------------------------------------------------------|
-| `FEEDBACK`  | User explicitly rates quality (thumbs up/down, star rating)             |
-| `EDIT`      | User modifies AI-generated content — implicit "this was wrong"          |
-| `EVENT`     | A notable action occurred (retry clicked, flow abandoned, feature used) |
-| `METRIC`    | A numeric quality measurement (score 0.0–1.0)                           |
-| `ARBITRARY` | Custom/untyped observation that doesn't fit above                       |
+`kind`: `FEEDBACK` (explicit rating) · `EDIT` (user modifies AI output) · `EVENT` (retry, abandon, copy) · `METRIC` (numeric score) · `ARBITRARY` (custom)
 
-## Signal Sources
+`source`: `HUMAN` (user action) · `LABEL` (human review process) · `SYNTHETIC` (automated — platform responsibility)
 
-| Source      | Use when                                         |
-|-------------|--------------------------------------------------|
-| `HUMAN`     | Signal came from a real user action              |
-| `LABEL`     | Signal came from a human labeling/review process |
-| `SYNTHETIC` | Automated signal — **see platform note below**   |
+Required: `kind`, `source`, and at least one of `session_id` or `trace_id` (auto-resolved from `agentic_session` context). `score` must be 0.0–1.0 if provided.
 
 ## Synthetic Signals: Platform vs Code
 
-**Synthetic signals are Kelet's responsibility, not the developer's.**
+Kelet already has the full trace: every LLM call, model response, tool invocations, latency, token counts, turn structure. That's enough information to evaluate most quality dimensions (task completion, relevance, faithfulness, hallucination, sentiment) without the developer writing a single line. Synthetic evaluators run on the platform against this trace data — no code, no deployment, cold-start included.
 
-For LLM-as-judge evaluators, heuristic checks, quality monitors:
-→ Direct the developer to `https://console.kelet.ai/synthetics`
-Kelet manages evaluators there on their behalf — no code required, cold-start solution included.
+**Default assumption: if Kelet can see it in the trace, it's a managed synthetic.** Only propose coded `source=SYNTHETIC` signals for information Kelet can't observe — e.g. a score from an external system, a domain-specific classifier running outside the LLM path, or a ground-truth comparison against a private dataset.
 
-Only write `source=SYNTHETIC` signal code if:
+Direct developers to `https://console.kelet.ai/<project>/synthetics` — Kelet manages evaluators there.
 
-1. Developer explicitly requests it, AND
-2. The platform genuinely cannot implement it (explain why, ask developer to confirm)
+Only write `source=SYNTHETIC` code if: (1) developer explicitly requests it AND (2) platform genuinely cannot implement it — explain why and ask developer to confirm.
 
-## Signal Brainstorming: 3–5 per flow
+## Signal Priority (highest diagnostic value first)
 
-Cap proposals at 5 per agentic flow. Prioritize by signal-to-noise:
-
-- **Highest value**: edit signals (user directly shows what was wrong) and explicit downvotes
-- **High value**: abandonment / retry events (strong implicit dissatisfaction signal)
-- **Medium value**: tool call failures, API errors (automated, low noise)
-- **Lower value**: generic page events (high noise, less specific to agent quality)
-
-For each proposal, state: what it captures → how it manifests → what failure it reveals to Kelet's RCA engine.
-
-## Required Fields
-
-- `kind` (required)
-- `source` (required)
-- `session_id` OR `trace_id` (at least one required — auto-resolved from `agentic_session` context if not passed
-  explicitly)
-- `trigger_name` (optional) — identifies what the signal represents; see naming conventions below
-- `score` (0.0–1.0 if provided)
-- `value` (optional) — text content: feedback text, edit diff, reasoning, etc.
-- `confidence` (0.0–1.0 if provided)
-- `metadata` (optional) — arbitrary dict for extra context
+1. Edit signals — user directly shows what was wrong
+2. Explicit downvotes
+3. Abandonment / retry — strong implicit dissatisfaction
+4. Tool call failures, API errors — automated, low noise
+5. Generic page events — high noise, least specific
 
 ---
 
 ## Selecting Synthetic Evaluators
 
-A synthetic evaluator is a tip that fires on every session. Kelet clusters sessions by signal patterns to find
-root causes. Good evaluators make the clusters sharp; bad ones add noise.
-
 **Core selection framework:**
 
 1. **One per failure category, no overlap.** Every agent fails in a finite set of ways. Map each failure mode
-   from Phase 0b to a category, then pick ONE evaluator per category. Two evaluators on the same category
+   from the signal analysis pass to a category, then pick ONE evaluator per category. Two evaluators on the same category
    (e.g. `Completeness` + `Relevance` + `Answer Relevancy`) multiply noise without adding information.
 
    | Category | What it measures | When it matters |
@@ -102,62 +69,86 @@ preset name in the deeplink; the platform auto-configures them. Custom evaluator
 
 **Universal — apply to almost any agent:**
 
-| Preset Name | Type | Catches |
-|------------|------|---------|
-| `Task Completion` | llm | Did the agent accomplish the user's goal? |
-| `Conversation Completeness` | llm | User intentions left unaddressed or deflected |
-| `Answer Relevancy` | llm | Off-topic responses, padding, missed the actual question |
-| `Sentiment Analysis` | llm | User frustration, dissatisfaction, repeated corrections throughout the session |
-| `Session Health Stats` | code | Turn counts, token usage, tool frequency — structural anomalies |
+| Preset Name                 | Type | Catches                                                                        |
+|-----------------------------|------|--------------------------------------------------------------------------------|
+| `Task Completion`           | llm  | Did the agent accomplish the user's goal?                                      |
+| `Conversation Completeness` | llm  | User intentions left unaddressed or deflected                                  |
+| `Answer Relevancy`          | llm  | Off-topic responses, padding, missed the actual question                       |
+| `Sentiment Analysis`        | llm  | User frustration, dissatisfaction, repeated corrections throughout the session |
+| `Session Health Stats`      | code | Turn counts, token usage, tool frequency — structural anomalies                |
 
 **RAG / retrieval agents:**
 
-| Preset Name | Type | Catches |
-|------------|------|---------|
-| `RAG Faithfulness` | llm | Claims contradicting retrieved documents — context-specific hallucination |
-| `Hallucination Detection` | llm | Fabricated facts, non-existent citations (no retrieval context required) |
+| Preset Name               | Type | Catches                                                                   |
+|---------------------------|------|---------------------------------------------------------------------------|
+| `RAG Faithfulness`        | llm  | Claims contradicting retrieved documents — context-specific hallucination |
+| `Hallucination Detection` | llm  | Fabricated facts, non-existent citations (no retrieval context required)  |
 
 **Multi-tool / agentic:**
 
-| Preset Name | Type | Catches |
-|------------|------|---------|
-| `Loop Detection` | code | Repeated tool calls, circular execution patterns |
-| `Tool Usage Efficiency` | llm | Redundant calls, retry loops, poor sequencing |
-| `Knowledge Retention` | llm | Agent forgets facts the user provided earlier in the session |
+| Preset Name             | Type | Catches                                                      |
+|-------------------------|------|--------------------------------------------------------------|
+| `Loop Detection`        | code | Repeated tool calls, circular execution patterns             |
+| `Tool Usage Efficiency` | llm  | Redundant calls, retry loops, poor sequencing                |
+| `Knowledge Retention`   | llm  | Agent forgets facts the user provided earlier in the session |
 
 **Role / behavior:**
 
-| Preset Name | Type | Catches |
-|------------|------|---------|
-| `Role Adherence` | llm | Agent drifts outside its assigned scope or persona |
-| `Agent Over-Compliance` | llm | Sycophancy — changing answer when user pushes back without new info |
+| Preset Name             | Type | Catches                                                             |
+|-------------------------|------|---------------------------------------------------------------------|
+| `Role Adherence`        | llm  | Agent drifts outside its assigned scope or persona                  |
+| `Agent Over-Compliance` | llm  | Sycophancy — changing answer when user pushes back without new info |
 
 ⚠️ Type trap: "did the agent refuse when it should have helped?" sounds binary but requires understanding intent
 → always `llm`. Only use `code` if a junior dev could write the check in one line without reading the content.
 
 ---
 
-## Synthetic Deeplink Generation
+## Synthetic Creation
 
-Base64url-encode the payload, then append to `https://console.kelet.ai/synthetics/setup?deeplink=`:
+Two paths. Primary (auto-create via API) whenever the user pastes `KELET_API_KEY`. Fallback (deeplink) only when the user explicitly declines to paste a secret.
 
-```python
-python3 -c "
-import base64, json
-payload = {
-    'use_case': '<agent use case>',
-    'ideas': [
-        {'name': '<name>', 'evaluator_type': 'llm', 'description': '<description>'},
-        {'name': '<name>', 'evaluator_type': 'code', 'description': '<description>'},
-    ]
-}
-encoded = base64.urlsafe_b64encode(json.dumps(payload, separators=(',', ':')).encode()).rstrip(b'=').decode()
-print(f'https://console.kelet.ai/synthetics/setup?deeplink={encoded}')
-"
+### Primary: API call
+
+**Long-running — 1–3 minutes typical, up to 5.**
+
+**MUST EXECUTE with Bash** (`timeout: 400000`) — never show as a code block for the user to copy:
+
+```bash
+curl -sS --max-time 360 \
+  -X POST "https://api.kelet.ai/api/projects/<project>/synthetics" \
+  -H "Authorization: Bearer $KELET_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -w '\n%{http_code}\n' \
+  -d '{"use_case":"<use_case>","ideas":[{"id":"<id>","name":"<name>","description":"<desc>","evaluator_type":"llm"}]}'
 ```
 
-Include only evaluators the developer selected. Add `"context"` to an idea only to steer the evaluator toward
-something specific. `evaluator_type`: `"code"` = deterministic check; `"llm"` = semantic/qualitative.
+⚠️ Do NOT add `-f` / `--fail` — drops the response body on 4xx/5xx, breaking `project_not_found` hint surfacing and 401 diagnosis.
+
+Parse output: last line = status code, everything before = body.
+
+Include only evaluators the developer selected. Idea fields: `id`, `name`, `description`, `evaluator_type` (`"llm"` semantic, `"code"` deterministic). Optional: `icon`, `context` (steers the generator toward something specific).
+
+**Response.** Body: `created=N updated=N failed=N deduped=bool`.
+- `failed > 0` → warn: "N ideas timed out — re-run the skill to retry those."
+- 200 → success. 401 → invalid key. 404 `project_not_found` → surface the server's hint. 504 / timeout → "Generator was slow. Re-run to retry — partial state was persisted." 5xx / network → fail loud.
+
+When surfacing success, echo evaluator names from the request body (the response does not include them).
+
+### Fallback: deeplink
+
+**Only when the user declines to paste a secret key.** No project verification.
+
+URL shape: `https://console.kelet.ai/<project>/synthetics/setup?deeplink=<base64url-payload>` — substitute `<project>` with the name confirmed in Checkpoint 2.
+
+Build a markdown link so the terminal renders it as a clickable label:
+
+```python
+python3 -c \
+"import base64,json; project='<project>'; payload={'use_case':'<use_case>','ideas':[{'name':'<name>','evaluator_type':'llm','description':'<desc>'}]}; url=f'https://console.kelet.ai/{project}/synthetics/setup?deeplink='+base64.urlsafe_b64encode(json.dumps(payload,separators=(',',':')).encode()).rstrip(b'=').decode(); print(f'[Open Kelet synthetic setup → {project}]({url})')"
+```
+
+Present as a bold action item. Note: "I can't verify the project name without a key — make sure it matches what you created."
 
 ---
 
