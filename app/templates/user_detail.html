@@ -1,334 +1,473 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>User: {{ user_id }}</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ context.account.profile_name or user_id }} — GlowBot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
+        :root {
+            --brand: #6c63ff;
+            --bg: #f4f5f9;
+            --card: #ffffff;
+            --text: #1a1d2e;
+            --text-secondary: #6b7280;
+            --text-muted: #9ca3af;
+            --border: #e5e7eb;
+            --shadow: 0 1px 3px rgba(0,0,0,0.05), 0 4px 12px rgba(0,0,0,0.05);
+            --radius: 14px;
+            --radius-sm: 8px;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
             min-height: 100vh;
-            padding: 24px;
-            color: #333;
+            color: var(--text);
         }
 
-        .container { max-width: 1100px; margin: 0 auto; }
-
-        .top-bar {
+        /* ── Top nav ── */
+        .topnav {
+            background: var(--card);
+            border-bottom: 1px solid var(--border);
+            padding: 0 40px;
+            height: 56px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
 
-        .back-button {
-            display: inline-block;
-            padding: 10px 20px;
-            background: white;
-            color: #667eea;
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85em;
+            font-weight: 500;
+            color: var(--text-secondary);
             text-decoration: none;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 0.9em;
+            padding: 6px 12px;
+            border-radius: var(--radius-sm);
+            transition: all 0.15s;
         }
-        .back-button:hover { background: #f0f0f0; }
 
-        .reset-button {
-            padding: 10px 20px;
-            background: #ff5252;
-            color: white;
-            border: none;
-            border-radius: 8px;
+        .back-link:hover {
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        .reset-btn {
+            padding: 7px 16px;
+            background: transparent;
+            color: #ef4444;
+            border: 1px solid #fecaca;
+            border-radius: var(--radius-sm);
+            font-family: inherit;
+            font-size: 0.82em;
             font-weight: 600;
-            font-size: 0.9em;
             cursor: pointer;
+            transition: all 0.15s;
         }
-        .reset-button:hover { background: #d32f2f; }
 
+        .reset-btn:hover {
+            background: #fef2f2;
+            border-color: #ef4444;
+        }
+
+        /* ── Main layout ── */
+        .main {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 36px 40px;
+        }
+
+        .page-header {
+            margin-bottom: 24px;
+        }
+
+        .page-header h1 {
+            font-size: 1.6em;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            margin-bottom: 4px;
+        }
+
+        /* ── Card ── */
         .card {
-            background: white;
-            padding: 28px 32px;
-            border-radius: 16px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.12);
-            margin-bottom: 20px;
-        }
-
-        h1 { color: #667eea; margin-bottom: 20px; font-size: 1.6em; }
-
-        h2 {
-            color: #333;
-            font-size: 1.05em;
+            background: var(--card);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
             margin-bottom: 16px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #f0f0f0;
+            overflow: hidden;
         }
 
+        .card-head {
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.88em;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            color: var(--text);
+        }
+
+        .card-body { padding: 8px 0; }
+
+        /* ── Info rows ── */
         .info-row {
             display: flex;
-            padding: 10px 0;
-            border-bottom: 1px solid #f8f8f8;
+            align-items: flex-start;
+            padding: 10px 24px;
+            border-bottom: 1px solid #fafafa;
+            font-size: 0.875em;
         }
-        .info-row:last-child { border-bottom: none; }
-        .info-label { font-weight: 600; color: #667eea; width: 180px; flex-shrink: 0; font-size: 0.9em; }
-        .info-value { flex: 1; font-size: 0.9em; }
 
+        .info-row:last-child { border-bottom: none; }
+
+        .info-label {
+            width: 160px;
+            flex-shrink: 0;
+            font-weight: 500;
+            color: var(--text-muted);
+            padding-top: 1px;
+        }
+
+        .info-value { flex: 1; color: var(--text); }
+
+        /* ── Badges ── */
         .badge {
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 9px;
+            border-radius: 20px;
+            font-size: 0.75em;
+            font-weight: 500;
+            margin-right: 4px;
+            margin-bottom: 3px;
+        }
+
+        .badge-yes       { background: #d1fae5; color: #059669; }
+        .badge-no        { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+        .badge-unknown   { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+        .badge-item      { background: #dbeafe; color: #1d4ed8; }
+        .badge-concern   { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+        .badge-preference { background: #fce7f3; color: #9d174d; }
+
+        .state-badge {
+            display: inline-flex;
+            align-items: center;
             padding: 3px 10px;
             border-radius: 20px;
             font-size: 0.8em;
-            margin-right: 5px;
-            margin-bottom: 3px;
+            font-weight: 600;
         }
-        .badge-yes       { background: #e8f5e9; color: #2e7d32; }
-        .badge-no        { background: #f5f5f5; color: #999; }
-        .badge-unknown   { background: #f5f5f5; color: #bbb; }
-        .badge-item      { background: #e3f2fd; color: #1565c0; }
-        .badge-concern   { background: #fff8e1; color: #e65100; }
-        .badge-preference { background: #fce4ec; color: #c62828; }
 
-        .empty-text { color: #bbb; font-style: italic; font-size: 0.9em; }
+        .state-interviewing { background: #ede9ff; color: #6c63ff; }
+        .state-reviewing    { background: #fef3c7; color: #d97706; }
+        .state-complete     { background: #d1fae5; color: #059669; }
 
-        /* ── Generated routine ── */
+        .empty-text { color: var(--text-muted); font-style: italic; font-size: 0.9em; }
+
+        /* ── Routine ── */
+        .routine-narrative {
+            background: #f8f7ff;
+            border-left: 3px solid var(--brand);
+            border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+            padding: 14px 18px;
+            font-size: 0.875em;
+            color: var(--text-secondary);
+            line-height: 1.65;
+            margin: 16px 24px;
+        }
+
         .routine-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 16px;
+            gap: 16px;
+            padding: 0 24px 16px;
         }
+
         .routine-col h3 {
-            font-size: 0.95em;
-            color: #667eea;
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .routine-step {
-            background: #f8f9ff;
-            border-left: 3px solid #667eea;
-            border-radius: 6px;
-            padding: 12px 14px;
+            font-size: 0.82em;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
             margin-bottom: 10px;
         }
+
+        .routine-step {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 12px 14px;
+            margin-bottom: 8px;
+        }
+
         .step-header {
             display: flex;
             align-items: baseline;
-            gap: 8px;
-            margin-bottom: 6px;
+            gap: 7px;
+            margin-bottom: 4px;
         }
+
         .step-order {
+            font-size: 0.72em;
             font-weight: 700;
-            color: #667eea;
-            font-size: 0.85em;
+            color: var(--brand);
             flex-shrink: 0;
         }
-        .step-name { font-weight: 600; font-size: 0.95em; }
+
+        .step-name { font-weight: 600; font-size: 0.875em; }
+
         .step-ingredient {
-            font-size: 0.78em;
-            color: #888;
-            margin-bottom: 6px;
+            font-size: 0.76em;
+            color: var(--text-muted);
             font-style: italic;
+            margin-bottom: 5px;
         }
-        .step-why { font-size: 0.85em; color: #555; margin-bottom: 4px; }
-        .step-tip { font-size: 0.8em; color: #888; }
+
+        .step-why { font-size: 0.82em; color: var(--text-secondary); margin-bottom: 4px; }
+
+        .step-tip {
+            font-size: 0.78em;
+            color: var(--text-muted);
+        }
+
         .step-tip::before { content: "💡 "; }
 
-        .routine-narrative {
-            background: linear-gradient(135deg, #f8f9ff, #fdf0ff);
-            border-radius: 10px;
-            padding: 16px 20px;
-            font-size: 0.9em;
-            color: #555;
-            line-height: 1.6;
-            margin-bottom: 20px;
-            border-left: 4px solid #667eea;
+        .avoid-section {
+            margin: 0 24px 16px;
+            padding: 10px 14px;
+            background: #fff5f5;
+            border: 1px solid #fecaca;
+            border-radius: var(--radius-sm);
+            font-size: 0.82em;
+            color: #ef4444;
         }
+
+        .avoid-section strong { display: block; margin-bottom: 3px; color: #dc2626; }
 
         .routine-notes {
-            margin-top: 16px;
+            margin: 0 24px 20px;
         }
-        .routine-notes h3 { font-size: 0.9em; color: #555; margin-bottom: 8px; }
+
+        .routine-notes h3 {
+            font-size: 0.82em;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 8px;
+        }
+
         .note-item {
             font-size: 0.85em;
-            color: #666;
-            padding: 5px 0;
-            border-bottom: 1px dashed #eee;
+            color: var(--text-secondary);
+            padding: 5px 0 5px 14px;
+            border-bottom: 1px solid #fafafa;
+            position: relative;
         }
-        .note-item::before { content: "• "; color: #667eea; }
-        .avoid-list { font-size: 0.85em; color: #e53935; margin-top: 4px; }
 
-        /* ── Conversation history ── */
-        .message {
-            padding: 12px 16px;
-            margin: 8px 0;
-            border-radius: 10px;
-            font-size: 0.88em;
-            line-height: 1.5;
-            white-space: pre-wrap;
+        .note-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--brand);
+            opacity: 0.5;
         }
-        .message-user      { background: #e3f2fd; margin-left: 60px; }
-        .message-assistant { background: #f3e5f5; margin-right: 60px; }
-        .message-role { font-weight: 700; font-size: 0.8em; margin-bottom: 4px; color: #888; text-transform: uppercase; }
 
-        .state-badge {
-            display: inline-block;
-            padding: 3px 12px;
-            border-radius: 20px;
-            font-size: 0.8em;
+        /* ── Chat history ── */
+        .chat-list { padding: 8px 24px 16px; }
+
+        .message { margin-bottom: 8px; }
+
+        .message-role {
+            font-size: 0.7em;
             font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            margin-bottom: 3px;
         }
-        .state-interviewing { background: #e8eaff; color: #667eea; }
-        .state-reviewing    { background: #fff3e0; color: #e65100; }
-        .state-complete     { background: #e8f5e9; color: #2e7d32; }
+
+        .message-user     .message-role { color: #3b82f6; }
+        .message-assistant .message-role { color: var(--brand); }
+
+        .message-bubble {
+            padding: 10px 14px;
+            border-radius: var(--radius-sm);
+            font-size: 0.85em;
+            line-height: 1.55;
+            white-space: pre-wrap;
+            max-width: 80%;
+        }
+
+        .message-user      .message-bubble { background: #eff6ff; color: var(--text); margin-left: auto; }
+        .message-assistant .message-bubble { background: #f8f7ff; color: var(--text); }
     </style>
 </head>
 <body>
-<div class="container">
 
-    <div class="top-bar">
-        <a href="/dashboard" class="back-button">&larr; All Users</a>
-        <form method="POST" action="/dashboard/user/{{ user_id }}/reset"
-              onsubmit="return confirm('Reset this user? This will clear their profile, routine, and conversation history.')">
-            <button type="submit" class="reset-button">Reset User</button>
-        </form>
-    </div>
+<header class="topnav">
+    <a href="/dashboard" class="back-link">← All Users</a>
+    <form method="POST" action="/dashboard/user/{{ user_id }}/reset"
+          onsubmit="return confirm('Reset this user? This will clear their profile, routine, and conversation history.')">
+        <button type="submit" class="reset-btn">Reset User</button>
+    </form>
+</header>
+
+<main class="main">
 
     <!-- Account -->
     <div class="card">
-        <h1>{{ context.account.profile_name or user_id }}</h1>
-        {% if context.account.profile_name %}
-        <div class="info-row">
-            <div class="info-label">Phone</div>
-            <div class="info-value">{{ user_id }}</div>
-        </div>
-        {% endif %}
-        <div class="info-row">
-            <div class="info-label">Status</div>
-            <div class="info-value">
-                <span class="state-badge state-{{ context.state }}">{{ context.state|replace('_',' ')|title }}</span>
+        <div class="card-body">
+            <div class="info-row" style="padding-top: 16px;">
+                <div class="info-label" style="padding-top:0;">
+                    <div style="font-size:1.35em;font-weight:700;letter-spacing:-0.03em;color:var(--text);margin-bottom:4px;">
+                        {{ context.account.profile_name or user_id }}
+                    </div>
+                    {% if context.account.profile_name %}
+                    <div style="font-size:0.8em;color:var(--text-muted);font-weight:400;">{{ user_id }}</div>
+                    {% endif %}
+                </div>
+                <div class="info-value" style="padding-top:4px;">
+                    <span class="state-badge state-{{ context.state }}">{{ context.state|replace('_',' ')|title }}</span>
+                </div>
             </div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Language</div>
-            <div class="info-value">{{ context.language }}</div>
-        </div>
-        {% if context.account %}
-        <div class="info-row">
-            <div class="info-label">Age Verified</div>
-            <div class="info-value">
-                {% if context.account.age_verified %}<span class="badge badge-yes">Yes</span>
-                {% else %}<span class="badge badge-no">No</span>{% endif %}
+            <div class="info-row">
+                <div class="info-label">Language</div>
+                <div class="info-value">{{ context.language }}</div>
             </div>
+            {% if context.account %}
+            <div class="info-row">
+                <div class="info-label">Age Verified</div>
+                <div class="info-value">
+                    {% if context.account.age_verified %}<span class="badge badge-yes">Yes</span>
+                    {% else %}<span class="badge badge-no">No</span>{% endif %}
+                </div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Knowledge Level</div>
+                <div class="info-value">{{ context.account.knowledge_level|title if context.account.knowledge_level else '—' }}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Created</div>
+                <div class="info-value" style="color:var(--text-muted);">{{ context.account.created_at or '—' }}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Last Updated</div>
+                <div class="info-value" style="color:var(--text-muted);">{{ context.account.updated_at or '—' }}</div>
+            </div>
+            {% endif %}
         </div>
-        <div class="info-row">
-            <div class="info-label">Knowledge Level</div>
-            <div class="info-value">{{ context.account.knowledge_level|title if context.account.knowledge_level else '—' }}</div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Created</div>
-            <div class="info-value">{{ context.account.created_at or '—' }}</div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Last Updated</div>
-            <div class="info-value">{{ context.account.updated_at or '—' }}</div>
-        </div>
-        {% endif %}
     </div>
 
     <!-- Skin Profile -->
     <div class="card">
-        <h2>Skin Profile</h2>
-        <div class="info-row">
-            <div class="info-label">Skin Type</div>
-            <div class="info-value">{{ context.skin_profile.skin_type|title if context.skin_profile.skin_type else '—' }}</div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Concerns</div>
-            <div class="info-value">
-                {% if context.skin_profile.concerns %}
-                    {% for c in context.skin_profile.concerns %}<span class="badge badge-concern">{{ c }}</span>{% endfor %}
-                {% else %}<span class="empty-text">Not specified</span>{% endif %}
+        <div class="card-head">Skin Profile</div>
+        <div class="card-body">
+            <div class="info-row">
+                <div class="info-label">Skin Type</div>
+                <div class="info-value">{{ context.skin_profile.skin_type|title if context.skin_profile.skin_type else '—' }}</div>
             </div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Sun Exposure</div>
-            <div class="info-value">{{ context.skin_profile.sun_exposure|title if context.skin_profile.sun_exposure else '—' }}</div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Budget</div>
-            <div class="info-value">{{ context.preferences.budget_range|replace('_',' ')|title if context.preferences.budget_range else '—' }}</div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Preferences</div>
-            <div class="info-value">
-                {% if context.preferences.requirements %}
-                    {% for p in context.preferences.requirements %}<span class="badge badge-preference">{{ p }}</span>{% endfor %}
-                {% else %}<span class="empty-text">None</span>{% endif %}
+            <div class="info-row">
+                <div class="info-label">Concerns</div>
+                <div class="info-value">
+                    {% if context.skin_profile.concerns %}
+                        {% for c in context.skin_profile.concerns %}<span class="badge badge-concern">{{ c }}</span>{% endfor %}
+                    {% else %}<span class="empty-text">Not specified</span>{% endif %}
+                </div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Sun Exposure</div>
+                <div class="info-value">{{ context.skin_profile.sun_exposure|title if context.skin_profile.sun_exposure else '—' }}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Budget</div>
+                <div class="info-value">{{ context.preferences.budget_range|replace('_',' ')|title if context.preferences.budget_range else '—' }}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Preferences</div>
+                <div class="info-value">
+                    {% if context.preferences.requirements %}
+                        {% for p in context.preferences.requirements %}<span class="badge badge-preference">{{ p }}</span>{% endfor %}
+                    {% else %}<span class="empty-text">None</span>{% endif %}
+                </div>
             </div>
         </div>
     </div>
 
     <!-- Health -->
     <div class="card">
-        <h2>Health Information</h2>
-        {% if context.health_info %}
-        <div class="info-row">
-            <div class="info-label">Pregnant</div>
-            <div class="info-value">
-                {% if context.health_info.is_pregnant is none %}<span class="badge badge-unknown">Not asked</span>
-                {% elif context.health_info.is_pregnant %}<span class="badge badge-yes">Yes</span>
-                {% else %}<span class="badge badge-no">No</span>{% endif %}
+        <div class="card-head">Health Information</div>
+        <div class="card-body">
+            {% if context.health_info %}
+            <div class="info-row">
+                <div class="info-label">Pregnant</div>
+                <div class="info-value">
+                    {% if context.health_info.is_pregnant is none %}<span class="badge badge-unknown">Not asked</span>
+                    {% elif context.health_info.is_pregnant %}<span class="badge badge-yes">Yes</span>
+                    {% else %}<span class="badge badge-no">No</span>{% endif %}
+                </div>
             </div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Nursing</div>
-            <div class="info-value">
-                {% if context.health_info.is_nursing is none %}<span class="badge badge-unknown">Not asked</span>
-                {% elif context.health_info.is_nursing %}<span class="badge badge-yes">Yes</span>
-                {% else %}<span class="badge badge-no">No</span>{% endif %}
+            <div class="info-row">
+                <div class="info-label">Nursing</div>
+                <div class="info-value">
+                    {% if context.health_info.is_nursing is none %}<span class="badge badge-unknown">Not asked</span>
+                    {% elif context.health_info.is_nursing %}<span class="badge badge-yes">Yes</span>
+                    {% else %}<span class="badge badge-no">No</span>{% endif %}
+                </div>
             </div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Planning Pregnancy</div>
-            <div class="info-value">
-                {% if context.health_info.planning_pregnancy is none %}<span class="badge badge-unknown">Not asked</span>
-                {% elif context.health_info.planning_pregnancy %}<span class="badge badge-yes">Yes</span>
-                {% else %}<span class="badge badge-no">No</span>{% endif %}
+            <div class="info-row">
+                <div class="info-label">Planning Pregnancy</div>
+                <div class="info-value">
+                    {% if context.health_info.planning_pregnancy is none %}<span class="badge badge-unknown">Not asked</span>
+                    {% elif context.health_info.planning_pregnancy %}<span class="badge badge-yes">Yes</span>
+                    {% else %}<span class="badge badge-no">No</span>{% endif %}
+                </div>
             </div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Medications</div>
-            <div class="info-value">
-                {% if context.health_info.medications %}
-                    {% for m in context.health_info.medications %}<span class="badge badge-item">{{ m }}</span>{% endfor %}
-                {% else %}<span class="empty-text">None</span>{% endif %}
+            <div class="info-row">
+                <div class="info-label">Medications</div>
+                <div class="info-value">
+                    {% if context.health_info.medications %}
+                        {% for m in context.health_info.medications %}<span class="badge badge-item">{{ m }}</span>{% endfor %}
+                    {% else %}<span class="empty-text">None</span>{% endif %}
+                </div>
             </div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Allergies</div>
-            <div class="info-value">
-                {% if context.health_info.allergies %}
-                    {% for a in context.health_info.allergies %}<span class="badge badge-item">{{ a }}</span>{% endfor %}
-                {% else %}<span class="empty-text">None</span>{% endif %}
+            <div class="info-row">
+                <div class="info-label">Allergies</div>
+                <div class="info-value">
+                    {% if context.health_info.allergies %}
+                        {% for a in context.health_info.allergies %}<span class="badge badge-item">{{ a }}</span>{% endfor %}
+                    {% else %}<span class="empty-text">None</span>{% endif %}
+                </div>
             </div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Sensitivities</div>
-            <div class="info-value">
-                {% if context.health_info.sensitivities %}
-                    {% for s in context.health_info.sensitivities %}<span class="badge badge-item">{{ s }}</span>{% endfor %}
-                {% else %}<span class="empty-text">None</span>{% endif %}
+            <div class="info-row">
+                <div class="info-label">Sensitivities</div>
+                <div class="info-value">
+                    {% if context.health_info.sensitivities %}
+                        {% for s in context.health_info.sensitivities %}<span class="badge badge-item">{{ s }}</span>{% endfor %}
+                    {% else %}<span class="empty-text">None</span>{% endif %}
+                </div>
             </div>
+            {% endif %}
         </div>
-        {% endif %}
     </div>
 
     <!-- Generated Routine -->
     {% if routine %}
     <div class="card">
-        <h2>Generated Routine</h2>
+        <div class="card-head">Generated Routine</div>
 
         {% if routine.narrative_summary %}
         <div class="routine-narrative">{{ routine.narrative_summary }}</div>
@@ -375,9 +514,9 @@
         </div>
 
         {% if routine.ingredients_to_avoid %}
-        <div class="info-row">
-            <div class="info-label">Avoid</div>
-            <div class="info-value avoid-list">{{ routine.ingredients_to_avoid | join(', ') }}</div>
+        <div class="avoid-section">
+            <strong>Ingredients to avoid</strong>
+            {{ routine.ingredients_to_avoid | join(', ') }}
         </div>
         {% endif %}
 
@@ -392,34 +531,38 @@
     </div>
     {% endif %}
 
-    <!-- Current User Routine (self-reported) -->
+    <!-- Self-Reported Routine -->
     <div class="card">
-        <h2>Self-Reported Routine</h2>
-        <div class="info-row">
-            <div class="info-label">Morning</div>
-            <div class="info-value">{{ context.routines.morning }}</div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Evening</div>
-            <div class="info-value">{{ context.routines.evening }}</div>
+        <div class="card-head">Self-Reported Routine</div>
+        <div class="card-body">
+            <div class="info-row">
+                <div class="info-label">Morning</div>
+                <div class="info-value">{{ context.routines.morning or '—' }}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Evening</div>
+                <div class="info-value">{{ context.routines.evening or '—' }}</div>
+            </div>
         </div>
     </div>
 
     <!-- Conversation History -->
     <div class="card">
-        <h2>Conversation History ({{ history|length }} messages)</h2>
+        <div class="card-head">Conversation History <span style="color:var(--text-muted);font-weight:400;">{{ history|length }} messages</span></div>
         {% if history %}
-        {% for msg in history %}
-        <div class="message message-{{ msg.role }}">
-            <div class="message-role">{{ msg.role }}</div>
-            <div>{{ msg.content }}</div>
+        <div class="chat-list">
+            {% for msg in history %}
+            <div class="message message-{{ msg.role }}">
+                <div class="message-role">{{ msg.role }}</div>
+                <div class="message-bubble">{{ msg.content }}</div>
+            </div>
+            {% endfor %}
         </div>
-        {% endfor %}
         {% else %}
-        <p class="empty-text">No conversation history yet.</p>
+        <div style="padding:40px 24px;text-align:center;color:var(--text-muted);font-size:0.875em;">No conversation history yet.</div>
         {% endif %}
     </div>
 
-</div>
+</main>
 </body>
 </html>
