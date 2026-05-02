@@ -1,911 +1,1184 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GlowBot — Your Personal Skincare Expert</title>
-  <meta name="description" content="GlowBot is your AI-powered skincare consultant on WhatsApp. Get a personalized routine in minutes." />
+  <title>GlowBot — Personal Skincare, Done in Five Minutes</title>
+  <meta name="description" content="GlowBot — your intelligent skincare consultant. A personalized routine for your skin, in one conversation." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="GlowBot — Personal Skincare, Done in Five Minutes" />
+  <meta property="og:description" content="GlowBot — your intelligent skincare consultant. A personalized routine for your skin, in one conversation." />
+  <meta property="og:locale" content="en_US" />
+  <meta property="og:locale:alternate" content="he_IL" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="GlowBot — Personal Skincare, Done in Five Minutes" />
+  <meta name="twitter:description" content="GlowBot — your intelligent skincare consultant. A personalized routine for your skin, in one conversation." />
+  <link rel="alternate" hreflang="he" href="/he/" />
+  <link rel="alternate" hreflang="en" href="/" />
+  <link rel="alternate" hreflang="x-default" href="/" />
+  <link rel="canonical" href="/" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400;1,9..144,500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
 
   <style>
-    /* ── Reset & Base ── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --cream:   #FDFAF6;
-      --sand:    #F2EBE0;
-      --nude:    #C9A882;
-      --nude-d:  #A8865E;
-      --sage:    #8BAF8D;
-      --sage-d:  #6A9170;
-      --ink:     #2A2420;
-      --muted:   #7A6E68;
-      --wa:      #25D366;
-      --wa-d:    #1DA851;
+      --cream:      #FDF8F3;
+      --peach:      #FDEBD8;
+      --blush:      #FDE0C8;
+      --apricot:    #F0976A;
+      --apricot-d:  #C97245;
+      --apricot-l:  #FDE5D3;
+      --cta-bg:     #B85A2E;
+      --sage-light: #EBF3EA;
+      --sage:       #B4C9B0;
+      --text:       #2E1D14;
+      --bark:       #7A5C4E;
+      --mist:       #9E8E85;
+      --wa-green:   #25D366;
+      --wa-green-d: #1aad54;
 
-      --font-serif: 'Cormorant Garamond', Georgia, serif;
-      --font-sans:  'Inter', system-ui, sans-serif;
+      --serif: 'Fraunces', Georgia, serif;
+      --sans:  'DM Sans', system-ui, sans-serif;
 
-      --radius: 16px;
-      --transition: 0.3s cubic-bezier(.4,0,.2,1);
+      --ease:     cubic-bezier(0.4, 0, 0.2, 1);
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     html { scroll-behavior: smooth; }
 
     body {
-      font-family: var(--font-sans);
+      font-family: var(--sans);
       background: var(--cream);
-      color: var(--ink);
-      line-height: 1.6;
+      color: var(--text);
+      line-height: 1.7;
       overflow-x: hidden;
     }
 
-    img { max-width: 100%; display: block; }
     a { color: inherit; text-decoration: none; }
+    img { max-width: 100%; display: block; }
 
-    /* ── Utility ── */
-    .container {
-      width: 100%;
-      max-width: 1120px;
-      margin: 0 auto;
-      padding: 0 24px;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 14px 28px;
-      border-radius: 100px;
-      font-family: var(--font-sans);
-      font-size: 15px;
-      font-weight: 500;
-      cursor: pointer;
-      border: none;
-      transition: var(--transition);
-      text-decoration: none;
+    /* ── SKIP LINK ── */
+    .skip-link {
+      position: absolute;
+      inset-inline-start: -999px;
+      top: 8px;
+      padding: 10px 18px;
+      background: var(--apricot);
+      color: var(--cream);
+      border-radius: 4px;
+      font-size: 13px;
+      z-index: 99999;
       white-space: nowrap;
     }
+    .skip-link:focus { inset-inline-start: 8px; }
 
-    .btn-wa {
-      background: var(--wa);
-      color: #fff;
-    }
-    .btn-wa:hover {
-      background: var(--wa-d);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(37,211,102,.35);
-    }
-
-    .btn-outline {
-      background: transparent;
-      color: var(--ink);
-      border: 1.5px solid rgba(42,36,32,.2);
-    }
-    .btn-outline:hover {
-      border-color: var(--nude);
-      color: var(--nude-d);
+    /* ── CONTAINER ── */
+    .container {
+      width: 100%;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 32px;
     }
 
-    /* ── Scroll reveal ── */
-    .reveal {
-      opacity: 0;
-      transform: translateY(28px);
-      transition: opacity 0.7s ease, transform 0.7s ease;
-    }
-    .reveal.visible {
-      opacity: 1;
-      transform: none;
-    }
-
-    /* ──────────────────────────────────────────
-       NAV
-    ────────────────────────────────────────── */
+    /* ── NAV ── */
     nav {
       position: fixed;
       top: 0; left: 0; right: 0;
       z-index: 100;
       padding: 18px 0;
-      transition: background var(--transition), box-shadow var(--transition);
+      transition: background 0.4s var(--ease), box-shadow 0.4s;
     }
     nav.scrolled {
-      background: rgba(253,250,246,.88);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      box-shadow: 0 1px 0 rgba(42,36,32,.06);
+      background: rgba(253, 248, 243, 0.94);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 1px 0 rgba(240, 151, 106, 0.18);
     }
-    nav .container {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .nav-logo {
-      font-family: var(--font-serif);
-      font-size: 26px;
-      font-weight: 500;
-      letter-spacing: .02em;
-      color: var(--ink);
-    }
-    .nav-logo span { color: var(--nude); }
-    .nav-cta { font-size: 14px; padding: 11px 22px; }
+    nav .container { display: flex; align-items: center; justify-content: space-between; }
 
-    .nav-right {
+    .nav-logo {
+      font-family: var(--serif);
+      font-size: 27px;
+      font-weight: 300;
+      font-style: italic;
+      color: var(--text);
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
+      letter-spacing: 0.01em;
     }
+    .nav-logo em { font-style: italic; color: var(--apricot); font-weight: 400; }
+    .nav-logo-img {
+      width: 38px;
+      height: 38px;
+      object-fit: contain;
+      flex-shrink: 0;
+      border-radius: 50%;
+    }
+
+    .nav-right { display: flex; align-items: center; gap: 12px; }
 
     .lang-switch {
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--bark);
+      padding: 10px 14px;
+      border: 1px solid rgba(122, 92, 78, 0.25);
+      border-radius: 100px;
+      transition: color 0.25s, border-color 0.25s, background 0.25s;
+      white-space: nowrap;
+      touch-action: manipulation;
+    }
+    .lang-switch:hover { color: var(--apricot-d); border-color: var(--apricot); background: var(--apricot-l); }
+    .lang-switch:active { opacity: 0.7; }
+
+    .nav-cta {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 8px 14px;
+      gap: 8px;
+      padding: 10px 22px;
       border-radius: 100px;
+      background: var(--apricot);
+      color: var(--cream);
+      font-family: var(--sans);
       font-size: 13px;
       font-weight: 500;
-      color: var(--muted);
-      border: 1.5px solid rgba(42,36,32,.15);
-      background: transparent;
-      cursor: pointer;
-      transition: var(--transition);
-      text-decoration: none;
-      white-space: nowrap;
+      letter-spacing: 0.04em;
+      transition: background 0.3s, transform 0.3s;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
     }
-    .lang-switch:hover {
-      color: var(--ink);
-      border-color: rgba(42,36,32,.35);
-      background: var(--sand);
-    }
-    .lang-switch .lang-flag { font-size: 15px; line-height: 1; }
+    .nav-cta:hover { background: var(--apricot-d); transform: translateY(-1px); }
+    .nav-cta:active { transform: none; opacity: 0.85; }
+    .nav-cta svg { flex-shrink: 0; }
 
-    /* ──────────────────────────────────────────
+    /* ── FOCUS ── */
+    a:focus-visible, button:focus-visible {
+      outline: 2px solid var(--apricot);
+      outline-offset: 3px;
+      border-radius: 3px;
+    }
+
+    /* ── OVERFLOW RESILIENCE ── */
+    .hero-sub, .section-sub, .how-step-body, .benefit-body, .social-quote, .cta-sub {
+      overflow-wrap: break-word;
+    }
+
+    /* ── REVEAL ── */
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out);
+    }
+    .reveal.visible { opacity: 1; transform: none; }
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━
        HERO
-    ────────────────────────────────────────── */
+    ━━━━━━━━━━━━━━━━━━━━━━ */
     .hero {
       min-height: 100svh;
+      background: var(--peach);
+      position: relative;
+      overflow: hidden;
       display: flex;
       align-items: center;
       padding: 120px 0 80px;
-      position: relative;
-      overflow: hidden;
     }
 
-    /* Decorative blobs */
-    .hero::before, .hero::after {
-      content: '';
-      position: absolute;
-      border-radius: 50%;
-      filter: blur(80px);
-      pointer-events: none;
+    .hero-bg { position: absolute; inset: 0; pointer-events: none; }
+    .glow-orb { position: absolute; border-radius: 50%; pointer-events: none; }
+    .glow-orb-1 {
+      width: 700px; height: 700px;
+      top: -280px;
+      inset-inline-start: 50%;
+      transform: translateX(-50%);
+      background: radial-gradient(circle, rgba(240,151,106,0.22) 0%, transparent 60%);
     }
-    .hero::before {
-      width: 600px; height: 600px;
-      background: radial-gradient(circle, rgba(201,168,130,.22) 0%, transparent 70%);
-      top: -100px; right: -150px;
+    .glow-orb-2 {
+      width: 420px; height: 420px;
+      bottom: -80px; inset-inline-end: 5%;
+      background: radial-gradient(circle, rgba(180,201,176,0.3) 0%, transparent 65%);
     }
-    .hero::after {
-      width: 400px; height: 400px;
-      background: radial-gradient(circle, rgba(139,175,141,.18) 0%, transparent 70%);
-      bottom: 0; left: -80px;
+    .glow-orb-3 {
+      width: 280px; height: 280px;
+      top: 35%; inset-inline-start: -60px;
+      background: radial-gradient(circle, rgba(240,151,106,0.14) 0%, transparent 60%);
     }
 
-    .hero .container {
+    .hero-inner {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 64px;
+      gap: 60px;
       align-items: center;
+      position: relative;
+      z-index: 1;
     }
+
+    .hero-text-side { display: flex; flex-direction: column; align-items: flex-start; }
 
     .hero-badge {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      background: var(--sand);
-      border: 1px solid rgba(201,168,130,.3);
-      color: var(--nude-d);
+      padding: 6px 14px;
+      background: rgba(240,151,106,0.14);
+      border: 1px solid rgba(240,151,106,0.3);
       border-radius: 100px;
-      padding: 6px 16px;
-      font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 24px;
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--apricot-d);
+      margin-bottom: 28px;
     }
-    .hero-badge .dot {
-      width: 7px; height: 7px;
-      background: var(--sage);
-      border-radius: 50%;
-      animation: pulse 2s infinite;
-    }
+    .hero-badge::before { content: '✦'; }
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50%       { opacity: .5; transform: scale(1.4); }
-    }
-
-    .hero h1 {
-      font-family: var(--font-serif);
-      font-size: clamp(42px, 5.5vw, 72px);
-      font-weight: 400;
+    .hero-title {
+      font-family: var(--serif);
+      font-size: clamp(44px, 5.5vw, 76px);
+      font-weight: 600;
       line-height: 1.1;
-      letter-spacing: -.01em;
+      color: var(--text);
       margin-bottom: 24px;
-      color: var(--ink);
+      letter-spacing: -0.02em;
     }
-    .hero h1 em {
-      font-style: italic;
-      color: var(--nude-d);
-    }
+    .hero-title em { font-style: italic; color: var(--apricot); font-weight: 400; }
 
     .hero-sub {
       font-size: 17px;
-      color: var(--muted);
-      max-width: 460px;
+      font-weight: 300;
+      color: var(--bark);
+      line-height: 1.8;
       margin-bottom: 40px;
-      line-height: 1.7;
+      max-width: 400px;
     }
 
-    .hero-actions {
-      display: flex;
+    .hero-actions { display: flex; flex-direction: column; gap: 16px; align-items: flex-start; }
+
+    .btn-wa {
+      display: inline-flex;
       align-items: center;
-      gap: 16px;
-      flex-wrap: wrap;
+      gap: 12px;
+      padding: 17px 32px;
+      background: var(--wa-green);
+      color: var(--cream);
+      border-radius: 100px;
+      font-family: var(--sans);
+      font-size: 16px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      transition: background 0.3s, transform 0.3s, box-shadow 0.3s;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      border: none;
+      cursor: pointer;
     }
+    .btn-wa svg { width: 20px; height: 20px; flex-shrink: 0; }
+    .btn-wa:hover { background: var(--wa-green-d); transform: translateY(-2px); box-shadow: 0 10px 36px rgba(37,211,102,0.28); }
+    .btn-wa:active { transform: none; box-shadow: none; }
+
+    .btn-ghost {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--bark);
+      font-size: 14px;
+      font-family: var(--sans);
+      background: none;
+      border: none;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: color 0.25s;
+    }
+    .btn-ghost:hover { color: var(--apricot-d); }
+    .btn-ghost::after { content: '→'; transition: transform 0.25s; }
+    .btn-ghost:hover::after { transform: translateX(4px); }
 
     .hero-note {
-      font-size: 13px;
-      color: var(--muted);
-      margin-top: 20px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      margin-top: 4px;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      color: var(--mist);
+      text-transform: uppercase;
     }
-    .hero-note::before {
+
+    /* ── ROUTINE CARD ── */
+    .hero-card-side {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+
+    .routine-card {
+      background: var(--cream);
+      border-radius: 24px;
+      padding: 32px;
+      box-shadow: 0 24px 64px rgba(46, 29, 20, 0.1), 0 4px 16px rgba(46,29,20,0.06);
+      width: 100%;
+      max-width: 340px;
+      position: relative;
+      z-index: 2;
+    }
+    .routine-card::before {
       content: '';
-      display: inline-block;
-      width: 14px; height: 14px;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238BAF8D' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
-      background-size: contain;
-      background-repeat: no-repeat;
+      position: absolute;
+      top: 0; inset-inline-start: 0; inset-inline-end: 0;
+      height: 5px;
+      background: linear-gradient(to right, var(--apricot), var(--blush));
+      border-start-start-radius: 24px;
+      border-start-end-radius: 24px;
     }
 
-    /* Phone mockup */
-    .hero-visual {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      position: relative;
+    .rc-label {
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--mist);
+      margin-bottom: 8px;
     }
-
-    .phone-wrap {
-      position: relative;
-      width: 300px;
+    .rc-title {
+      font-family: var(--serif);
+      font-size: 26px;
+      font-style: italic;
+      font-weight: 400;
+      color: var(--apricot);
+      margin-bottom: 20px;
+      line-height: 1;
     }
-
-    .phone {
-      width: 300px;
-      background: #1A1A1A;
-      border-radius: 44px;
-      padding: 14px;
-      box-shadow:
-        0 0 0 1.5px rgba(255,255,255,.08),
-        0 40px 80px rgba(42,36,32,.25),
-        0 4px 12px rgba(42,36,32,.12);
-      position: relative;
-      z-index: 1;
-    }
-
-    .phone-screen {
-      background: #ECE5DD;
-      border-radius: 32px;
-      overflow: hidden;
-      min-height: 540px;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .phone-status {
-      background: #075E54;
-      color: #fff;
-      padding: 14px 18px 12px;
+    .rc-steps { display: flex; flex-direction: column; gap: 10px; }
+    .rc-step {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--peach);
+      border-radius: 12px;
+      font-size: 13px;
     }
-    .phone-avatar {
-      width: 38px; height: 38px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, var(--nude), var(--sage));
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: var(--font-serif);
-      font-size: 17px;
-      color: #fff;
+    .rc-step-num {
+      font-family: var(--serif);
+      font-size: 15px;
+      font-style: italic;
+      color: var(--apricot);
+      min-width: 18px;
       flex-shrink: 0;
     }
-    .phone-name {
-      font-size: 15px;
-      font-weight: 600;
-      line-height: 1.2;
-    }
-    .phone-online {
-      font-size: 12px;
-      opacity: .75;
-    }
-
-    .chat-body {
-      flex: 1;
-      padding: 16px 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .bubble {
-      max-width: 80%;
-      padding: 9px 13px;
-      border-radius: 12px;
-      font-size: 13.5px;
-      line-height: 1.5;
-      position: relative;
-    }
-    .bubble-bot {
-      background: #fff;
-      border-radius: 0 12px 12px 12px;
-      align-self: flex-start;
-      color: #1a1a1a;
-    }
-    .bubble-user {
-      background: #DCF8C6;
-      border-radius: 12px 0 12px 12px;
-      align-self: flex-end;
-      color: #1a1a1a;
-    }
-    .bubble-time {
-      font-size: 11px;
-      color: #999;
-      display: block;
-      text-align: right;
-      margin-top: 2px;
-    }
-    .bubble .emoji { font-size: 16px; }
-
-    /* Decorative elements around phone */
-    .phone-glow {
-      position: absolute;
-      inset: -30px;
-      border-radius: 60px;
-      background: radial-gradient(ellipse, rgba(201,168,130,.18) 0%, transparent 70%);
-      z-index: 0;
-    }
-
-    .float-card {
-      position: absolute;
-      background: #fff;
-      border-radius: 14px;
-      padding: 12px 16px;
-      box-shadow: 0 8px 32px rgba(42,36,32,.12);
-      z-index: 2;
-      font-size: 13px;
+    .rc-step-text { flex: 1; color: var(--text); }
+    .rc-step-time {
+      margin-inline-start: auto;
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      color: var(--mist);
+      text-transform: uppercase;
       white-space: nowrap;
     }
-    .float-card-1 {
-      top: 60px; left: -70px;
-    }
-    .float-card-2 {
-      bottom: 80px; right: -60px;
-    }
-    .float-label {
+
+    .rc-tag {
+      position: absolute;
+      background: var(--text);
+      color: var(--cream);
+      border-radius: 100px;
+      padding: 7px 14px;
       font-size: 11px;
-      color: var(--muted);
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      margin-bottom: 4px;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+      box-shadow: 0 6px 20px rgba(46,29,20,0.16);
+      will-change: transform;
     }
-    .float-value {
-      font-weight: 600;
-      color: var(--ink);
-      display: flex;
+    .rc-tag-1 { top: -14px; inset-inline-end: -20px; animation: floatA 4s ease-in-out infinite; z-index: 3; }
+    .rc-tag-2 { bottom: -14px; inset-inline-start: -20px; background: var(--apricot); animation: floatB 4.5s ease-in-out infinite; z-index: 3; }
+
+    @keyframes floatA { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+    @keyframes floatB { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(6px); } }
+
+    /* Hero entrance */
+    .hero-text-side > * { animation: fadeUp 0.9s var(--ease-out) both; }
+    .hero-badge   { animation-delay: 0.05s; }
+    .hero-title   { animation-delay: 0.2s; }
+    .hero-sub     { animation-delay: 0.35s; }
+    .hero-actions { animation-delay: 0.48s; }
+    .hero-note    { animation-delay: 0.58s; }
+    .hero-card-side { animation: fadeUp 1s var(--ease-out) 0.35s both; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━
+       TRUST STRIP
+    ━━━━━━━━━━━━━━━━━━━━━━ */
+    .trust-strip {
+      background: var(--cream);
+      padding: 52px 0;
+      border-top: 1px solid rgba(240,151,106,0.15);
+      border-bottom: 1px solid rgba(240,151,106,0.15);
+    }
+    .trust-row { display: flex; }
+    .trust-item {
+      flex: 1;
+      min-width: 0;
+      padding: 16px 28px;
+      position: relative;
+    }
+    .trust-item + .trust-item::before {
+      content: '';
+      position: absolute;
+      inset-inline-start: 0;
+      top: 15%; bottom: 15%;
+      width: 1px;
+      background: rgba(240,151,106,0.2);
+    }
+    .trust-stars { display: flex; gap: 3px; margin-bottom: 10px; }
+    .trust-stars span { color: var(--apricot); font-size: 11px; }
+    .trust-quote {
+      font-family: var(--serif);
+      font-size: 14px;
+      font-style: italic;
+      color: var(--text);
+      line-height: 1.6;
+      margin-bottom: 10px;
+    }
+    .trust-name { font-size: 11px; color: var(--mist); letter-spacing: 0.07em; }
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━
+       SECTION SHARED
+    ━━━━━━━━━━━━━━━━━━━━━━ */
+    .section-header { margin-bottom: 64px; }
+
+    .section-eyebrow {
+      display: inline-flex;
       align-items: center;
-      gap: 6px;
-    }
-    .float-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-    }
-
-    /* ──────────────────────────────────────────
-       HOW IT WORKS
-    ────────────────────────────────────────── */
-    .section {
-      padding: 100px 0;
-    }
-
-    .section-label {
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: .1em;
+      gap: 10px;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.25em;
       text-transform: uppercase;
-      color: var(--nude);
-      margin-bottom: 12px;
+      color: var(--apricot-d);
+      margin-bottom: 16px;
+    }
+    .section-eyebrow::before {
+      content: '';
+      width: 20px; height: 1.5px;
+      background: var(--apricot-d);
+      border-radius: 2px;
+      flex-shrink: 0;
     }
 
     .section-title {
-      font-family: var(--font-serif);
+      font-family: var(--serif);
       font-size: clamp(34px, 4vw, 52px);
-      font-weight: 400;
+      font-weight: 500;
       line-height: 1.15;
-      color: var(--ink);
-      max-width: 560px;
+      color: var(--text);
+      margin-bottom: 16px;
+      letter-spacing: -0.02em;
     }
-
-    .section-title em {
-      font-style: italic;
-      color: var(--nude-d);
-    }
+    .section-title em { font-style: italic; color: var(--apricot); font-weight: 400; }
 
     .section-sub {
       font-size: 16px;
-      color: var(--muted);
-      margin-top: 16px;
+      font-weight: 300;
+      color: var(--bark);
+      line-height: 1.8;
       max-width: 500px;
-      line-height: 1.7;
     }
 
-    .steps {
-      margin-top: 64px;
+    /* ━━━━━━━━━━━━━━━━━━━━━━
+       HOW IT WORKS
+    ━━━━━━━━━━━━━━━━━━━━━━ */
+    .how-section {
+      background: var(--cream);
+      padding: 120px 0;
+      overflow: hidden;
+      position: relative;
+    }
+    .how-section::after {
+      content: '';
+      position: absolute;
+      inset-inline-start: -80px;
+      bottom: -80px;
+      width: 480px; height: 480px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(180,201,176,0.18) 0%, transparent 65%);
+      pointer-events: none;
+    }
+
+    .how-steps {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 32px;
-    }
-
-    .step {
+      gap: 0;
       position: relative;
-      padding: 36px 32px;
-      background: var(--sand);
-      border-radius: var(--radius);
-      transition: transform var(--transition), box-shadow var(--transition);
     }
-    .step:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 16px 48px rgba(42,36,32,.08);
-    }
-
-    .step-num {
-      font-family: var(--font-serif);
-      font-size: 64px;
-      font-weight: 300;
-      color: rgba(201,168,130,.3);
-      line-height: 1;
-      margin-bottom: 20px;
+    .how-steps::before {
+      content: '';
+      position: absolute;
+      top: 40px;
+      inset-inline-start: 18%;
+      inset-inline-end: 18%;
+      height: 2px;
+      background: repeating-linear-gradient(
+        90deg,
+        var(--apricot) 0px, var(--apricot) 4px,
+        transparent 4px, transparent 11px
+      );
+      opacity: 0.35;
     }
 
-    .step-icon {
-      width: 48px; height: 48px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 22px;
-      margin-bottom: 20px;
-    }
+    .how-step { padding: 0 28px 0 28px; }
 
-    .step h3 {
-      font-family: var(--font-serif);
-      font-size: 24px;
-      font-weight: 500;
-      margin-bottom: 12px;
-      color: var(--ink);
-    }
-
-    .step p {
-      font-size: 15px;
-      color: var(--muted);
-      line-height: 1.7;
-    }
-
-    /* connector line between steps */
-    .steps-connector {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-top: -16px;
-      margin-bottom: -16px;
-      gap: 24px;
-    }
-
-    /* ──────────────────────────────────────────
-       FEATURES
-    ────────────────────────────────────────── */
-    .features-section {
-      background: var(--sand);
-    }
-
-    .features-grid {
-      margin-top: 64px;
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 2px;
-      border-radius: var(--radius);
-      overflow: hidden;
-    }
-
-    .feature-card {
-      background: var(--cream);
-      padding: 48px 44px;
-      transition: background var(--transition);
-    }
-    .feature-card:hover { background: #fff; }
-
-    .feature-icon {
-      width: 52px; height: 52px;
-      border-radius: 14px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 24px;
+    .how-step-svg {
+      width: 80px;
+      height: 80px;
+      display: block;
       margin-bottom: 24px;
+      position: relative;
+      z-index: 1;
+      filter: drop-shadow(0 6px 18px rgba(240,151,106,0.18));
     }
-
-    .feature-card h3 {
-      font-family: var(--font-serif);
-      font-size: 22px;
+    .how-step-title {
+      font-family: var(--serif);
+      font-size: 20px;
       font-weight: 500;
+      color: var(--text);
       margin-bottom: 12px;
+      line-height: 1.3;
+    }
+    .how-step-body { font-size: 14px; font-weight: 300; color: var(--bark); line-height: 1.85; }
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━
+       BENEFITS
+    ━━━━━━━━━━━━━━━━━━━━━━ */
+    .benefits-section {
+      background: var(--sage-light);
+      padding: 120px 0;
     }
 
-    .feature-card p {
+    .benefits-list {
+      margin-top: 64px;
+      display: flex;
+      flex-direction: column;
+      gap: 88px;
+    }
+
+    .benefit-row {
+      display: flex;
+      flex-direction: row;
+      gap: 80px;
+      align-items: center;
+    }
+
+    .benefit-visual { flex: 0 0 auto; }
+
+    .benefit-orb {
+      width: 200px; height: 200px;
+      border-radius: 50%;
+      background: var(--peach);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 16px 48px rgba(240,151,106,0.14);
+    }
+    .benefit-num {
+      font-family: var(--serif);
+      font-size: 64px;
+      font-style: italic;
+      font-weight: 300;
+      color: var(--apricot);
+      line-height: 1;
+      letter-spacing: -0.02em;
+      user-select: none;
+    }
+
+    .benefit-text { flex: 1; min-width: 0; }
+
+    .benefit-title {
+      font-family: var(--serif);
+      font-size: 26px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 14px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+    .benefit-title em { font-style: italic; color: var(--apricot); font-weight: 400; }
+
+    .benefit-body {
       font-size: 15px;
-      color: var(--muted);
-      line-height: 1.7;
+      font-weight: 300;
+      color: var(--bark);
+      line-height: 1.85;
+      max-width: 460px;
     }
 
-    /* ──────────────────────────────────────────
-       CTA BANNER
-    ────────────────────────────────────────── */
-    .cta-section {
+    .benefit-row:nth-child(even) .benefit-visual { order: 2; }
+    .benefit-row:nth-child(even) .benefit-text   { order: 1; }
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━
+       TESTIMONIALS
+    ━━━━━━━━━━━━━━━━━━━━━━ */
+    .social-section {
+      background: var(--peach);
       padding: 100px 0;
-    }
-
-    .cta-box {
-      background: linear-gradient(135deg, var(--ink) 0%, #3d322b 100%);
-      border-radius: 28px;
-      padding: 80px 64px;
-      text-align: center;
       position: relative;
       overflow: hidden;
     }
-
-    .cta-box::before {
+    .social-section::before {
       content: '';
       position: absolute;
       width: 500px; height: 500px;
       border-radius: 50%;
-      background: radial-gradient(circle, rgba(201,168,130,.15) 0%, transparent 70%);
-      top: -200px; right: -100px;
+      background: radial-gradient(circle, rgba(240,151,106,0.15) 0%, transparent 60%);
+      inset-inline-end: -150px; top: -150px;
       pointer-events: none;
     }
-    .cta-box::after {
+
+    .ornament { display: flex; align-items: center; gap: 20px; margin-bottom: 48px; }
+    .ornament-line { flex: 1; height: 1px; background: linear-gradient(to right, transparent, rgba(201,114,69,0.3), transparent); }
+    .ornament-sym { font-family: var(--serif); font-style: italic; font-size: 18px; color: var(--apricot-d); opacity: 0.6; }
+
+    .social-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-top: 48px;
+    }
+
+    .social-card {
+      background: var(--cream);
+      border-radius: 20px;
+      padding: 28px 24px;
+      min-width: 0;
+      transition: transform 0.3s var(--ease);
+    }
+    .social-card:hover { transform: translateY(-4px); }
+
+    .social-stars { display: flex; gap: 3px; margin-bottom: 12px; }
+    .social-stars span { color: var(--apricot); font-size: 11px; }
+
+    .social-qmark {
+      font-family: var(--serif);
+      font-size: 56px;
+      font-style: italic;
+      color: var(--apricot-l);
+      line-height: 0.7;
+      margin-bottom: 14px;
+      display: block;
+    }
+
+    .social-quote {
+      font-family: var(--serif);
+      font-size: 15px;
+      font-style: italic;
+      color: var(--text);
+      line-height: 1.7;
+      margin-bottom: 20px;
+    }
+
+    .social-author { display: flex; align-items: center; gap: 10px; }
+    .social-avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: var(--apricot);
+      color: var(--cream);
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--serif);
+      font-style: italic;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .social-name { font-size: 13px; font-weight: 500; color: var(--text); }
+    .social-detail { font-size: 11px; letter-spacing: 0.08em; color: var(--mist); text-transform: uppercase; }
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━
+       CTA
+    ━━━━━━━━━━━━━━━━━━━━━━ */
+    .cta-section {
+      background: var(--cta-bg);
+      padding: 120px 0;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .cta-section::before {
+      content: '';
+      position: absolute;
+      width: 700px; height: 700px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 60%);
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    .cta-section::after {
       content: '';
       position: absolute;
       width: 300px; height: 300px;
       border-radius: 50%;
-      background: radial-gradient(circle, rgba(139,175,141,.12) 0%, transparent 70%);
-      bottom: -100px; left: -50px;
+      background: radial-gradient(circle, rgba(253,235,216,0.15) 0%, transparent 65%);
+      bottom: -60px; inset-inline-end: 10%;
       pointer-events: none;
     }
 
-    .cta-box h2 {
-      font-family: var(--font-serif);
-      font-size: clamp(36px, 4.5vw, 56px);
-      font-weight: 400;
-      color: #fff;
-      line-height: 1.15;
+    .cta-inner { position: relative; z-index: 1; max-width: 600px; margin: 0 auto; }
+
+    .cta-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: rgba(253,248,243,0.65);
       margin-bottom: 20px;
     }
-    .cta-box h2 em { font-style: italic; color: var(--nude); }
+    .cta-eyebrow::before { content: ''; width: 18px; height: 1.5px; background: rgba(253,248,243,0.45); border-radius: 2px; }
 
-    .cta-box p {
+    .cta-title {
+      font-family: var(--serif);
+      font-size: clamp(38px, 5vw, 60px);
+      font-weight: 500;
+      color: var(--cream);
+      line-height: 1.18;
+      margin-bottom: 20px;
+      letter-spacing: -0.02em;
+    }
+    .cta-title em { font-style: italic; font-weight: 400; }
+
+    .cta-sub {
       font-size: 16px;
-      color: rgba(255,255,255,.6);
-      max-width: 460px;
-      margin: 0 auto 40px;
-      line-height: 1.7;
+      font-weight: 300;
+      color: rgba(253,248,243,0.78);
+      line-height: 1.75;
+      margin-bottom: 44px;
     }
 
-    .cta-box .btn-wa {
-      font-size: 16px;
-      padding: 16px 36px;
+    .cta-note {
+      margin-top: 22px;
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: rgba(253,248,243,0.45);
     }
 
-    /* ──────────────────────────────────────────
+    /* ━━━━━━━━━━━━━━━━━━━━━━
        FOOTER
-    ────────────────────────────────────────── */
+    ━━━━━━━━━━━━━━━━━━━━━━ */
     footer {
-      border-top: 1px solid rgba(42,36,32,.08);
+      background: var(--cream);
       padding: 40px 0;
+      border-top: 1px solid rgba(240,151,106,0.15);
     }
-
-    footer .container {
+    footer .container { display: flex; align-items: center; justify-content: space-between; }
+    .footer-logo {
+      font-family: var(--serif);
+      font-size: 23px;
+      font-weight: 300;
+      font-style: italic;
+      color: var(--text);
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 16px;
+      gap: 10px;
+      letter-spacing: 0.01em;
     }
-
-    .footer-logo {
-      font-family: var(--font-serif);
-      font-size: 22px;
-      font-weight: 500;
+    .footer-logo em { font-style: italic; color: var(--apricot); font-weight: 400; }
+    .footer-logo-img {
+      width: 34px;
+      height: 34px;
+      object-fit: contain;
+      flex-shrink: 0;
+      border-radius: 50%;
     }
-    .footer-logo span { color: var(--nude); }
+    .footer-copy { font-size: 12px; color: var(--bark); letter-spacing: 0.05em; }
 
-    .footer-copy {
-      font-size: 13px;
-      color: var(--muted);
-    }
-
-    /* ──────────────────────────────────────────
+    /* ━━━━━━━━━━━━━━━━━━━━━━
        RESPONSIVE
-    ────────────────────────────────────────── */
+    ━━━━━━━━━━━━━━━━━━━━━━ */
     @media (max-width: 900px) {
-      .hero .container {
-        grid-template-columns: 1fr;
-        gap: 56px;
-        text-align: center;
-      }
-      .hero-sub { margin-left: auto; margin-right: auto; }
-      .hero-actions { justify-content: center; }
-      .hero-note { justify-content: center; }
-      .hero-visual { display: none; }
-
-      .steps { grid-template-columns: 1fr; }
-      .features-grid { grid-template-columns: 1fr; }
-      .cta-box { padding: 56px 32px; }
+      .hero-inner { grid-template-columns: 1fr; gap: 48px; text-align: center; }
+      .hero-text-side { align-items: center; }
+      .hero-sub { max-width: 100%; }
+      .hero-actions { align-items: center; width: 100%; }
+      .rc-tag { display: none; }
+      .hero-card-side { width: 100%; max-width: 340px; margin: 0 auto; }
+      .how-steps { grid-template-columns: 1fr; gap: 48px; }
+      .how-steps::before { display: none; }
+      .how-step { padding: 0; }
+      .benefit-row { flex-direction: column; gap: 32px; text-align: center; }
+      .benefit-row:nth-child(even) .benefit-visual { order: 0; }
+      .benefit-row:nth-child(even) .benefit-text   { order: 1; }
+      .benefit-body { max-width: 100%; }
+      .social-grid { grid-template-columns: 1fr; gap: 16px; }
+      .trust-row { flex-direction: column; }
+      .trust-item + .trust-item::before { display: none; }
+      footer .container { flex-direction: column; gap: 12px; text-align: center; }
     }
 
     @media (max-width: 600px) {
-      .section { padding: 72px 0; }
-      .cta-section { padding: 72px 0; }
-      .hero-actions { flex-direction: column; align-items: stretch; }
-      .btn { justify-content: center; }
+      .container { padding: 0 20px; }
+      .hero { padding: 100px 0 60px; }
+      .how-section, .benefits-section, .social-section, .cta-section { padding: 72px 0; }
+      .benefits-list { gap: 56px; }
+      .btn-wa { width: 100%; justify-content: center; }
+      .benefit-orb { width: 140px; height: 140px; }
+      .benefit-num { font-size: 44px; }
+      .nav-right { gap: 8px; }
+      .lang-switch { padding: 8px 10px; }
+      .nav-cta { padding: 9px 16px; font-size: 12px; }
+      .cta-section { padding: 80px 0; }
     }
 
-    /* ── WhatsApp SVG icon inline ── */
-    .wa-icon {
-      width: 20px; height: 20px;
-      flex-shrink: 0;
+    @media (prefers-reduced-motion: reduce) {
+      .hero-text-side > *, .hero-card-side { animation: none; opacity: 1; transform: none; }
+      .rc-tag { animation: none; }
+      .reveal { transition: none; opacity: 1; transform: none; }
+      html { scroll-behavior: auto; }
     }
+
+    #how, #benefits, #cta { scroll-margin-top: 80px; }
   </style>
 </head>
 <body>
 
-  <!-- ── NAV ── -->
-  <nav id="nav">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+
+  <nav id="nav" aria-label="Main navigation">
     <div class="container">
-      <div class="nav-logo">Glow<span>Bot</span></div>
-      <div class="nav-right">
-        <a href="/he/" class="lang-switch">
-          <span class="lang-flag">🇮🇱</span> עברית
-        </a>
-        <a href="#cta" class="btn btn-wa nav-cta">
-        <svg class="wa-icon" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-        </svg>
-        Start on WhatsApp
+      <a href="/" class="nav-logo">
+        <img src="logo/glowbot_image_only.png" alt="" aria-hidden="true" class="nav-logo-img" width="38" height="38">
+        <span>Glow<em>Bot</em></span>
       </a>
+      <div class="nav-right">
+        <a href="/he/" class="lang-switch" hreflang="he" lang="he" title="עברית">HE</a>
+        <a href="https://wa.me/972535664221" class="nav-cta" id="nav-wa" target="_blank" rel="noopener noreferrer">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+          </svg>
+          Start now
+        </a>
       </div>
     </div>
   </nav>
 
-  <!-- ── HERO ── -->
-  <section class="hero">
-    <div class="container">
-      <div class="hero-content">
-        <div class="hero-badge">
-          <span class="dot"></span>
-          AI-powered skincare, on WhatsApp
-        </div>
-        <h1>Your skin deserves<br><em>personal</em> attention</h1>
-        <p class="hero-sub">
-          GlowBot is your always-available skincare consultant. Answer a few questions and get a routine built specifically for your skin — delivered right to your WhatsApp chat.
-        </p>
-        <div class="hero-actions">
-          <a href="#cta" class="btn btn-wa">
-            <svg class="wa-icon" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-            </svg>
-            Start Your Free Consultation
-          </a>
-          <a href="#how" class="btn btn-outline">See how it works</a>
-        </div>
-        <p class="hero-note">Free to use &bull; No app download required</p>
-      </div>
+  <main id="main-content">
 
-      <!-- Phone mockup -->
-      <div class="hero-visual">
-        <div class="phone-glow"></div>
-        <div class="float-card float-card-1">
-          <div class="float-label">Skin type detected</div>
-          <div class="float-value">
-            <span class="float-dot" style="background:#C9A882;"></span>
-            Combination
+    <!-- ── HERO ── -->
+    <section class="hero">
+      <div class="hero-bg" aria-hidden="true">
+        <div class="glow-orb glow-orb-1"></div>
+        <div class="glow-orb glow-orb-2"></div>
+        <div class="glow-orb glow-orb-3"></div>
+      </div>
+      <div class="container">
+        <div class="hero-inner">
+          <div class="hero-text-side">
+            <div class="hero-badge" aria-label="Personalized skincare, a routine in five minutes">Personal care · Routine in five minutes</div>
+            <h1 class="hero-title">
+              Your skin,<br>
+              <em>your glow</em>
+            </h1>
+            <p class="hero-sub">
+              A short WhatsApp conversation. A precise skincare routine, built for your skin. Results you feel — in under five minutes.
+            </p>
+            <div class="hero-actions">
+              <a href="https://wa.me/972535664221" class="btn-wa" id="hero-wa" target="_blank" rel="noopener noreferrer">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                </svg>
+                Start a free consultation
+              </a>
+              <a href="#how" class="btn-ghost">How it works</a>
+            </div>
+            <p class="hero-note">No app &nbsp;·&nbsp; No payment &nbsp;·&nbsp; 100% personal</p>
           </div>
-        </div>
-        <div class="phone-wrap">
-          <div class="phone">
-            <div class="phone-screen">
-              <div class="phone-status">
-                <div class="phone-avatar">G</div>
-                <div>
-                  <div class="phone-name">GlowBot</div>
-                  <div class="phone-online">online</div>
+
+          <div class="hero-card-side">
+            <div class="rc-tag rc-tag-1" aria-hidden="true">✦ Combination skin · identified</div>
+            <div class="routine-card">
+              <div class="rc-label">Your routine · Morning</div>
+              <div class="rc-title">Morning routine</div>
+              <div class="rc-steps">
+                <div class="rc-step">
+                  <div class="rc-step-num">i</div>
+                  <div class="rc-step-text">Gentle balanced foam cleanser</div>
+                  <div class="rc-step-time">60 sec</div>
+                </div>
+                <div class="rc-step">
+                  <div class="rc-step-num">ii</div>
+                  <div class="rc-step-text">Hyaluronic serum for cheeks</div>
+                  <div class="rc-step-time">30 sec</div>
+                </div>
+                <div class="rc-step">
+                  <div class="rc-step-num">iii</div>
+                  <div class="rc-step-text">Light moisturizer for combination skin</div>
+                  <div class="rc-step-time">60 sec</div>
+                </div>
+                <div class="rc-step">
+                  <div class="rc-step-num">iv</div>
+                  <div class="rc-step-text">Sun protection SPF 50</div>
+                  <div class="rc-step-time">30 sec</div>
                 </div>
               </div>
-              <div class="chat-body">
-                <div class="bubble bubble-bot">
-                  Hi! I'm GlowBot 🌿 I'll help you build your perfect skincare routine. First — how does your skin feel by midday?
-                  <span class="bubble-time">10:02</span>
-                </div>
-                <div class="bubble bubble-user">
-                  Usually oily in the T-zone but dry on my cheeks
-                  <span class="bubble-time">10:03</span>
-                </div>
-                <div class="bubble bubble-bot">
-                  Classic combination skin! ✨ And do you currently use SPF daily?
-                  <span class="bubble-time">10:03</span>
-                </div>
-                <div class="bubble bubble-user">
-                  Not really… should I?
-                  <span class="bubble-time">10:04</span>
-                </div>
-                <div class="bubble bubble-bot">
-                  Absolutely — it's the single best anti-aging step. I'll include a lightweight SPF in your routine. A few more questions and we're done 🙌
-                  <span class="bubble-time">10:04</span>
-                </div>
+            </div>
+            <div class="rc-tag rc-tag-2" aria-hidden="true">✦ 4 steps · personalized</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── TRUST STRIP ── -->
+    <div class="trust-strip reveal">
+      <div class="container">
+        <div class="trust-row">
+          <div class="trust-item">
+            <div class="trust-stars" aria-label="5-star rating">
+              <span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span>
+            </div>
+            <p class="trust-quote">Finally a routine I can actually stick to.</p>
+            <span class="trust-name">Michal, 32 · Tel Aviv</span>
+          </div>
+          <div class="trust-item">
+            <div class="trust-stars" aria-label="5-star rating">
+              <span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span>
+            </div>
+            <p class="trust-quote">GlowBot found I was mixing conflicting ingredients. Since I changed — my skin has bloomed.</p>
+            <span class="trust-name">Noa, 28 · Jerusalem</span>
+          </div>
+          <div class="trust-item">
+            <div class="trust-stars" aria-label="5-star rating">
+              <span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span>
+            </div>
+            <p class="trust-quote">After years of trying — something that actually fits me personally.</p>
+            <span class="trust-name">Shira, 41 · Haifa</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── HOW IT WORKS ── -->
+    <section class="how-section" id="how">
+      <div class="container">
+        <div class="section-header reveal">
+          <div class="section-eyebrow">The process</div>
+          <h2 class="section-title">Three steps<br>to <em>glowing skin</em></h2>
+          <p class="section-sub">No forms, no downloads, no waiting. Just a natural conversation — and a routine you'll keep.</p>
+        </div>
+        <div class="how-steps reveal" style="transition-delay: 0.1s">
+          <div class="how-step">
+            <svg class="how-step-svg" viewBox="0 0 80 80" aria-hidden="true" focusable="false">
+              <circle cx="40" cy="40" r="36" fill="#FDEBD8"/>
+              <line x1="40" y1="60" x2="40" y2="30" stroke="#C97245" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M40 48 C40 48 23 44 25 30 C25 30 42 34 40 48Z" fill="#B4C9B0"/>
+              <path d="M40 42 C40 42 57 37 55 23 C55 23 38 28 40 42Z" fill="#B4C9B0" opacity="0.8"/>
+              <circle cx="40" cy="29" r="3.5" fill="#F0976A" opacity="0.75"/>
+            </svg>
+            <h3 class="how-step-title">Tell us about your skin</h3>
+            <p class="how-step-body">GlowBot asks friendly questions about your skin type, lifestyle, climate, and the products you already have. No jargon — just a simple, natural conversation.</p>
+          </div>
+          <div class="how-step">
+            <svg class="how-step-svg" viewBox="0 0 80 80" aria-hidden="true" focusable="false">
+              <circle cx="40" cy="40" r="36" fill="#FDEBD8"/>
+              <line x1="40" y1="62" x2="40" y2="30" stroke="#C97245" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M40 52 C40 52 23 47 25 35 C25 35 42 38 40 52Z" fill="#B4C9B0"/>
+              <path d="M40 52 C40 52 57 47 55 35 C55 35 38 38 40 52Z" fill="#B4C9B0" opacity="0.8"/>
+              <ellipse cx="40" cy="24" rx="5.5" ry="9" fill="#F0976A"/>
+              <ellipse cx="33" cy="27" rx="4.5" ry="7.5" fill="#F0976A" transform="rotate(-25 33 27)" opacity="0.82"/>
+              <ellipse cx="47" cy="27" rx="4.5" ry="7.5" fill="#F0976A" transform="rotate(25 47 27)" opacity="0.82"/>
+            </svg>
+            <h3 class="how-step-title">Your routine takes shape</h3>
+            <p class="how-step-body">Based on your answers, GlowBot builds a precise morning and evening routine — step by step. It works with what you already have and adds exactly what's missing.</p>
+          </div>
+          <div class="how-step">
+            <svg class="how-step-svg" viewBox="0 0 80 80" aria-hidden="true" focusable="false">
+              <circle cx="40" cy="40" r="36" fill="#FDE0C8"/>
+              <line x1="40" y1="62" x2="40" y2="50" stroke="#C97245" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M40 56 C40 56 25 52 27 41 C27 41 42 44 40 56Z" fill="#B4C9B0"/>
+              <g transform="translate(40,36)">
+                <ellipse cx="0" cy="-11" rx="5" ry="9.5" fill="#F0976A"/>
+                <ellipse cx="0" cy="-11" rx="5" ry="9.5" fill="#F0976A" transform="rotate(72)"/>
+                <ellipse cx="0" cy="-11" rx="5" ry="9.5" fill="#F0976A" transform="rotate(144)"/>
+                <ellipse cx="0" cy="-11" rx="5" ry="9.5" fill="#F0976A" transform="rotate(216)"/>
+                <ellipse cx="0" cy="-11" rx="5" ry="9.5" fill="#F0976A" transform="rotate(288)"/>
+              </g>
+              <circle cx="40" cy="36" r="7.5" fill="#FDF8F3"/>
+              <circle cx="40" cy="36" r="4.5" fill="#C97245"/>
+              <circle cx="38" cy="34" r="1.5" fill="#FDF8F3" opacity="0.55"/>
+            </svg>
+            <h3 class="how-step-title">A routine that grows with you</h3>
+            <p class="how-step-body">Your skin changes with seasons, stress, and life. GlowBot is always available for questions, tracks your progress, and updates your routine exactly when it needs to change.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── BENEFITS ── -->
+    <section class="benefits-section" id="benefits">
+      <div class="container">
+        <div class="section-header reveal">
+          <div class="section-eyebrow">Why GlowBot</div>
+          <h2 class="section-title">Skincare that understands<br><em>your skin</em></h2>
+          <p class="section-sub">Expert knowledge, accessible as a WhatsApp message.</p>
+        </div>
+        <div class="benefits-list">
+          <div class="benefit-row reveal">
+            <div class="benefit-visual">
+              <div class="benefit-orb" aria-hidden="true"><span class="benefit-num">01</span></div>
+            </div>
+            <div class="benefit-text">
+              <h3 class="benefit-title">Deep <em>personal</em> analysis</h3>
+              <p class="benefit-body">GlowBot takes into account your skin type, tone, concerns, climate, sleep habits, and diet — not just generic categories. Every recommendation is built for you alone.</p>
+            </div>
+          </div>
+          <div class="benefit-row reveal">
+            <div class="benefit-visual">
+              <div class="benefit-orb" aria-hidden="true"><span class="benefit-num">02</span></div>
+            </div>
+            <div class="benefit-text">
+              <h3 class="benefit-title"><em>Clear</em> and practical routines</h3>
+              <p class="benefit-body">No overwhelming product lists. GlowBot gives you a focused, ordered routine — exactly what to use, in what order, and how to layer it correctly.</p>
+            </div>
+          </div>
+          <div class="benefit-row reveal">
+            <div class="benefit-visual">
+              <div class="benefit-orb" aria-hidden="true"><span class="benefit-num">03</span></div>
+            </div>
+            <div class="benefit-text">
+              <h3 class="benefit-title">Explanations <em>in plain language</em></h3>
+              <p class="benefit-body">Want to know why retinol and vitamin C don't mix? GlowBot explains every ingredient simply, so you can shop smart and layer products safely.</p>
+            </div>
+          </div>
+          <div class="benefit-row reveal">
+            <div class="benefit-visual">
+              <div class="benefit-orb" aria-hidden="true"><span class="benefit-num">04</span></div>
+            </div>
+            <div class="benefit-text">
+              <h3 class="benefit-title">Updates when <em>life changes</em></h3>
+              <p class="benefit-body">Moved to a new city? Going through a stressful season? GlowBot keeps your routine relevant through every change — in climate, in your body, in your life.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── TESTIMONIALS ── -->
+    <section class="social-section">
+      <div class="container">
+        <div class="reveal">
+          <div class="ornament" aria-hidden="true">
+            <div class="ornament-line"></div>
+            <div class="ornament-sym">✦</div>
+            <div class="ornament-line"></div>
+          </div>
+          <div class="section-eyebrow">What users say</div>
+          <h2 class="section-title"><em>Real</em> results</h2>
+        </div>
+        <div class="social-grid">
+          <div class="social-card reveal" style="transition-delay:0.08s">
+            <div class="social-stars" aria-label="5-star rating">
+              <span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span>
+            </div>
+            <span class="social-qmark" aria-hidden="true">"</span>
+            <p class="social-quote">Finally a routine I can actually stick to. GlowBot understood exactly what my skin needed — no unnecessary products, no confusion.</p>
+            <div class="social-author">
+              <div class="social-avatar" aria-hidden="true">M</div>
+              <div>
+                <div class="social-name">Michal, 32</div>
+                <div class="social-detail">Tel Aviv · Oily skin</div>
+              </div>
+            </div>
+          </div>
+          <div class="social-card reveal" style="transition-delay:0.16s">
+            <div class="social-stars" aria-label="5-star rating">
+              <span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span>
+            </div>
+            <span class="social-qmark" aria-hidden="true">"</span>
+            <p class="social-quote">I thought I knew everything about skincare, but GlowBot found I was mixing conflicting ingredients. Once I changed — my skin genuinely bloomed.</p>
+            <div class="social-author">
+              <div class="social-avatar" aria-hidden="true">N</div>
+              <div>
+                <div class="social-name">Noa, 28</div>
+                <div class="social-detail">Jerusalem · Sensitive skin</div>
+              </div>
+            </div>
+          </div>
+          <div class="social-card reveal" style="transition-delay:0.24s">
+            <div class="social-stars" aria-label="5-star rating">
+              <span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span><span aria-hidden="true">★</span>
+            </div>
+            <span class="social-qmark" aria-hidden="true">"</span>
+            <p class="social-quote">After years of failed Instagram routines — GlowBot gave me something that actually fits me. I recommend it to everyone.</p>
+            <div class="social-author">
+              <div class="social-avatar" aria-hidden="true">S</div>
+              <div>
+                <div class="social-name">Shira, 41</div>
+                <div class="social-detail">Haifa · Combination skin</div>
               </div>
             </div>
           </div>
         </div>
-        <div class="float-card float-card-2">
-          <div class="float-label">Routine ready</div>
-          <div class="float-value">
-            <span class="float-dot" style="background:#8BAF8D;"></span>
-            4 steps · AM &amp; PM
-          </div>
+      </div>
+    </section>
+
+    <!-- ── CTA ── -->
+    <section class="cta-section" id="cta">
+      <div class="container">
+        <div class="cta-inner reveal">
+          <div class="cta-eyebrow">Ready to start</div>
+          <h2 class="cta-title">
+            Time for your<br>
+            <em>best skin yet</em>
+          </h2>
+          <p class="cta-sub">
+            One WhatsApp conversation. A routine built for your skin. Completely free.
+          </p>
+          <a href="https://wa.me/972535664221" class="btn-wa" id="wa-main" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+            </svg>
+            Chat with GlowBot
+          </a>
+          <p class="cta-note">No sign-up &nbsp;·&nbsp; No payment &nbsp;·&nbsp; No app</p>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- ── HOW IT WORKS ── -->
-  <section class="section" id="how">
-    <div class="container">
-      <div class="reveal">
-        <p class="section-label">How it works</p>
-        <h2 class="section-title">Your routine in three <em>simple</em> steps</h2>
-        <p class="section-sub">No complicated forms. No app to download. Just a conversation — and a skincare routine you'll actually stick to.</p>
-      </div>
+  </main>
 
-      <div class="steps">
-        <div class="step reveal" style="transition-delay:.1s">
-          <div class="step-num">01</div>
-          <div class="step-icon" style="background:#FDF1E5;">💬</div>
-          <h3>Tell us about your skin</h3>
-          <p>GlowBot asks you friendly questions about your skin type, concerns, lifestyle, and current products. No dermatology jargon — just a natural chat.</p>
-        </div>
-        <div class="step reveal" style="transition-delay:.2s">
-          <div class="step-num">02</div>
-          <div class="step-icon" style="background:#EDF3EE;">✨</div>
-          <h3>Get your personalized routine</h3>
-          <p>Based on your answers, GlowBot builds a step-by-step AM and PM skincare routine tailored specifically to your skin's needs and your lifestyle.</p>
-        </div>
-        <div class="step reveal" style="transition-delay:.3s">
-          <div class="step-num">03</div>
-          <div class="step-icon" style="background:#F5F0EA;">📈</div>
-          <h3>Track &amp; refine over time</h3>
-          <p>Check in daily, log how your skin feels, and let GlowBot adjust your routine as your skin evolves. Your routine gets smarter the longer you use it.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── FEATURES ── -->
-  <section class="section features-section">
-    <div class="container">
-      <div class="reveal">
-        <p class="section-label">Why GlowBot</p>
-        <h2 class="section-title">Skincare that <em>understands</em> you</h2>
-        <p class="section-sub">Built with the depth of a dermatology consultation, the simplicity of a text message.</p>
-      </div>
-
-      <div class="features-grid reveal" style="transition-delay:.15s">
-        <div class="feature-card">
-          <div class="feature-icon" style="background:#FDF1E5;">🧬</div>
-          <h3>Skin-first analysis</h3>
-          <p>GlowBot considers your skin type, tone, concerns, climate, and daily habits — not just generic categories. Every recommendation is built around you.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background:#EDF3EE;">📋</div>
-          <h3>Clear, actionable routines</h3>
-          <p>No overwhelming product lists. GlowBot gives you a focused, ordered routine with exactly what to use, when to use it, and how to layer it correctly.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background:#F0F4FF;">💡</div>
-          <h3>Ingredient intelligence</h3>
-          <p>Get plain-English explanations of what ingredients do for your skin and which combinations to avoid — so you shop smarter and layer safely.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background:#FFF0F5;">🔄</div>
-          <h3>Evolves with your skin</h3>
-          <p>Skin changes with seasons, stress, diet, and age. GlowBot checks in regularly and updates your routine when your skin's needs shift.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── CTA ── -->
-  <section class="cta-section" id="cta">
-    <div class="container">
-      <div class="cta-box reveal">
-        <h2>Ready to meet your<br><em>best skin</em>?</h2>
-        <p>Start a free consultation right now. GlowBot will have your personalized routine ready in under 5 minutes.</p>
-        <a href="#" class="btn btn-wa" id="wa-cta">
-          <svg class="wa-icon" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-          </svg>
-          Chat with GlowBot on WhatsApp
-        </a>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── FOOTER ── -->
   <footer>
     <div class="container">
-      <div class="footer-logo">Glow<span>Bot</span></div>
-      <p class="footer-copy">&copy; 2025 GlowBot. Your skin, your routine.</p>
+      <a href="/" class="footer-logo">
+        <img src="logo/glowbot_image_only.png" alt="" aria-hidden="true" class="footer-logo-img" width="34" height="34">
+        <span>Glow<em>Bot</em></span>
+      </a>
+      <p class="footer-copy">© 2025 GlowBot &nbsp;·&nbsp; Your skin, your routine.</p>
     </div>
   </footer>
 
   <script>
-    // Nav scroll effect
     const nav = document.getElementById('nav');
     window.addEventListener('scroll', () => {
-      nav.classList.toggle('scrolled', window.scrollY > 20);
+      nav.classList.toggle('scrolled', window.scrollY > 30);
     }, { passive: true });
 
-    // Scroll reveal
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(e => {
-        if (e.isIntersecting) {
-          e.target.classList.add('visible');
-          observer.unobserve(e.target);
-        }
+        if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); }
       });
-    }, { threshold: 0.12 });
-
+    }, { threshold: 0.1 });
     document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 
-    // WhatsApp link — update PHONE_NUMBER when ready
-    // Format: https://wa.me/<countrycode><number>?text=Hi%20GlowBot!
-    const WA_NUMBER = ''; // e.g. '15551234567'
-    const WA_TEXT   = encodeURIComponent('Hi GlowBot! I'd like to start my skincare consultation.');
-
-    if (WA_NUMBER) {
-      const href = `https://wa.me/${WA_NUMBER}?text=${WA_TEXT}`;
-      document.querySelectorAll('a[href="#"], a[href="#cta"]').forEach(a => {
-        if (a.id === 'wa-cta' || a.classList.contains('nav-cta') || a.textContent.includes('WhatsApp')) {
-          a.href = href;
-          a.target = '_blank';
-          a.rel = 'noopener';
-        }
-      });
-    }
+    const WA_NUMBER = '972535664221';
+    const WA_TEXT   = encodeURIComponent("Hey GlowBot! I'd love to start my personal skincare consultation 🌿");
+    const WA_HREF   = `https://wa.me/${WA_NUMBER}?text=${WA_TEXT}`;
+    document.querySelectorAll('#wa-main, #hero-wa, #nav-wa').forEach(a => { a.href = WA_HREF; });
   </script>
 </body>
 </html>
