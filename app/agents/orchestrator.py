@@ -265,12 +265,10 @@ ROUTINE UPDATES:
   see the current steps, then send the modified list. Never just describe the change in text.
 
 PRODUCT RECOMMENDATIONS:
-- Full shopping list request ("give me all products", "send me the shopping list") →
-  call get_product_recommendations with NO step_names
-- Specific product request ("recommend a vitamin C serum", "which cleanser?",
-  "מה אתה ממליץ על...") → call get_product_recommendations with step_names set to
-  the matching step name(s). You MUST pass step_names for single-product queries —
-  never omit it when the user asks about one specific product or ingredient.
+- Full shopping list ("give me all products", "send the shopping list", "אני רוצה את כל המוצרים") →
+  call get_full_shopping_list
+- Single product ("recommend a vitamin C serum", "which azelaic acid?", "מה ממליץ על...") →
+  call get_single_product_recommendation with the ingredient in English
 
 TOOL USAGE:
 - Use get_detailed_routine if the user wants more detail on their existing routine
@@ -429,15 +427,10 @@ async def update_routine_steps(
 
 
 @orchestrator_agent.tool
-async def get_product_recommendations(
-    ctx: RunContext[OrchestratorDeps],
-    step_names: list[str] | None = None,
-) -> str:
-    """Generate a personalised iHerb shopping list.
-    - Specific product request → pass step_names with the matching step name(s).
-    - Full shopping list request → omit step_names (or pass None).
-    Call this when the user asks where to buy products, asks for product links,
-    or requests a shopping list."""
+async def get_full_shopping_list(ctx: RunContext[OrchestratorDeps]) -> str:
+    """Generate a complete personalised iHerb shopping list for ALL steps in the routine.
+    Call this ONLY when the user explicitly asks for a full shopping list or all product links
+    (e.g. "send me the shopping list", "I want all the products", "אני רוצה את כל המוצרים")."""
     if not ctx.deps.routine_json:
         return "No routine has been generated yet — generate a routine first."
 
@@ -446,37 +439,58 @@ async def get_product_recommendations(
     from app.services.product_linker import ProductLinkerService
 
     routine = SkincareRoutine.model_validate(ctx.deps.routine_json)
-
-    # Filter to the requested step(s) if the user asked about a specific product
-    if step_names:
-        names_lower = {n.lower() for n in step_names}
-
-        def _step_matches(s) -> bool:
-            step_lower = s.step_name.lower()
-            cat_lower = (s.ingredient_category or "").lower()
-            return (
-                step_lower in names_lower
-                or cat_lower in names_lower
-                or any(name in step_lower for name in names_lower)
-                or any(name in cat_lower for name in names_lower)
-            )
-
-        filtered_morning = [s for s in routine.morning if _step_matches(s)]
-        filtered_evening = [s for s in routine.evening if _step_matches(s)]
-        # Fall back to full routine only if nothing matched at all
-        if filtered_morning or filtered_evening:
-            routine = routine.model_copy(
-                update={"morning": filtered_morning, "evening": filtered_evening}
-            )
-
     service = ProductLinkerService(Settings())
     messages = await service.generate_shopping_list(routine, ctx.deps.profile)
-
-    # Store formatted list in deps so the service layer can append it to responses
     ctx.deps.shopping_list_messages = messages
+    return f"Full shopping list generated with {len(messages)} message(s). Tell the user it's coming right up — the links will be sent automatically."
 
-    # Return a short confirmation — the actual links are in deps.shopping_list_messages
-    return f"Shopping list generated with {len(messages)} message(s). Tell the user it's coming right up — the links will be sent automatically."
+
+@orchestrator_agent.tool
+async def get_single_product_recommendation(
+    ctx: RunContext[OrchestratorDeps],
+    ingredient: str,
+) -> str:
+    """Get an iHerb recommendation for ONE specific product or ingredient.
+    Call this when the user asks for a recommendation for a single specific product
+    (e.g. "recommend an azelaic acid serum", "which cleanser?", "מה ממליץ על ויטמין C?").
+    ingredient: plain English description of what they're looking for
+    (e.g. "azelaic acid serum", "vitamin C serum", "gentle cleanser")."""
+    if not ctx.deps.routine_json:
+        return "No routine has been generated yet — generate a routine first."
+
+    from app.config import Settings
+    from app.schemas import RoutineStep, SkincareRoutine
+    from app.services.product_linker import ProductLinkerService
+
+    routine = SkincareRoutine.model_validate(ctx.deps.routine_json)
+
+    # Try to find the matching step in the routine
+    ing_lower = ingredient.lower()
+    matched_step = None
+    for step in routine.morning + routine.evening:
+        if (
+            ing_lower in step.step_name.lower()
+            or ing_lower in step.ingredient_category.lower()
+            or any(word in step.step_name.lower() for word in ing_lower.split())
+            or any(word in step.ingredient_category.lower() for word in ing_lower.split())
+        ):
+            matched_step = step
+            break
+
+    # If not in the stored routine, build a synthetic step from the ingredient description
+    if matched_step is None:
+        matched_step = RoutineStep(
+            order=1,
+            step_name=ingredient,
+            ingredient_category=ingredient,
+            why=f"User requested a recommendation for {ingredient}",
+        )
+
+    synthetic_routine = routine.model_copy(update={"morning": [], "evening": [matched_step]})
+    service = ProductLinkerService(Settings())
+    messages = await service.generate_shopping_list(synthetic_routine, ctx.deps.profile)
+    ctx.deps.shopping_list_messages = messages
+    return f"Recommendation for '{ingredient}' generated. Tell the user it's coming right up — the link will be sent automatically."
 
 
 # ── Routine formatting (ported from old orchestrator) ───────────────────────
