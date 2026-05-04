@@ -258,8 +258,19 @@ The user has received their skincare routine. You can:
 - Recommend specific product types or ingredient categories
 - Explain why certain steps or ingredients were chosen
 - Suggest modifications based on new information
-- If the user asks for product links, where to buy, or a shopping list — call
-  the get_product_recommendations tool to generate their personalised iHerb list
+
+ROUTINE UPDATES:
+- If the user asks to add, remove, or change a step — call update_routine_steps with the FULL
+  updated list for that time of day (morning or evening). First call get_detailed_routine to
+  see the current steps, then send the modified list. Never just describe the change in text.
+
+PRODUCT RECOMMENDATIONS:
+- Full shopping list request ("give me all products", "send me the shopping list") →
+  call get_product_recommendations with NO step_names
+- Specific product request ("recommend a vitamin C serum", "which cleanser?",
+  "מה אתה ממליץ על...") → call get_product_recommendations with step_names set to
+  the matching step name(s). You MUST pass step_names for single-product queries —
+  never omit it when the user asks about one specific product or ingredient.
 
 TOOL USAGE:
 - Use get_detailed_routine if the user wants more detail on their existing routine
@@ -379,15 +390,52 @@ async def get_detailed_routine(ctx: RunContext[OrchestratorDeps]) -> str:
 
 
 @orchestrator_agent.tool
+async def update_routine_steps(
+    ctx: RunContext[OrchestratorDeps],
+    time_of_day: str,
+    steps: list[dict],
+) -> str:
+    """Replace the steps for one time of day (morning or evening) in the stored routine.
+    Call this whenever the user asks to add, remove, or reorder a step.
+
+    - time_of_day: "morning" or "evening"
+    - steps: the FULL ordered list for that time of day after your change.
+      Each dict must have: order (int), step_name (str), ingredient_category (str), why (str).
+      Optional: usage_tip (str), time_expectation (str).
+
+    Always call get_detailed_routine first so you can see every existing step, then
+    reconstruct the complete list with your change applied and pass it here."""
+    if not ctx.deps.routine_json:
+        return "No routine exists yet — generate a routine first."
+
+    from app.schemas import RoutineStep, SkincareRoutine
+
+    routine = SkincareRoutine.model_validate(ctx.deps.routine_json)
+
+    try:
+        new_steps = [RoutineStep.model_validate(s) for s in steps]
+    except Exception as e:
+        return f"Invalid step data: {e}"
+
+    if time_of_day.lower() == "morning":
+        routine = routine.model_copy(update={"morning": new_steps})
+    elif time_of_day.lower() == "evening":
+        routine = routine.model_copy(update={"evening": new_steps})
+    else:
+        return "time_of_day must be 'morning' or 'evening'"
+
+    ctx.deps.routine_json = routine.model_dump(mode="json")
+    return f"Routine updated. {time_of_day.capitalize()} now has {len(new_steps)} step(s)."
+
+
+@orchestrator_agent.tool
 async def get_product_recommendations(
     ctx: RunContext[OrchestratorDeps],
     step_names: list[str] | None = None,
 ) -> str:
     """Generate a personalised iHerb shopping list.
-    - If the user asks for recommendations for a SPECIFIC product or step (e.g. "cleanser",
-      "vitamin C serum"), pass step_names with the matching step name(s) so only those
-      steps are covered.
-    - If the user asks for a full shopping list / all products, omit step_names (or pass None).
+    - Specific product request → pass step_names with the matching step name(s).
+    - Full shopping list request → omit step_names (or pass None).
     Call this when the user asks where to buy products, asks for product links,
     or requests a shopping list."""
     if not ctx.deps.routine_json:
@@ -402,15 +450,20 @@ async def get_product_recommendations(
     # Filter to the requested step(s) if the user asked about a specific product
     if step_names:
         names_lower = {n.lower() for n in step_names}
-        filtered_morning = [
-            s for s in routine.morning if s.step_name.lower() in names_lower
-            or any(name in s.step_name.lower() for name in names_lower)
-        ]
-        filtered_evening = [
-            s for s in routine.evening if s.step_name.lower() in names_lower
-            or any(name in s.step_name.lower() for name in names_lower)
-        ]
-        # Fall back to full routine if no steps matched (fuzzy miss)
+
+        def _step_matches(s) -> bool:
+            step_lower = s.step_name.lower()
+            cat_lower = (s.ingredient_category or "").lower()
+            return (
+                step_lower in names_lower
+                or cat_lower in names_lower
+                or any(name in step_lower for name in names_lower)
+                or any(name in cat_lower for name in names_lower)
+            )
+
+        filtered_morning = [s for s in routine.morning if _step_matches(s)]
+        filtered_evening = [s for s in routine.evening if _step_matches(s)]
+        # Fall back to full routine only if nothing matched at all
         if filtered_morning or filtered_evening:
             routine = routine.model_copy(
                 update={"morning": filtered_morning, "evening": filtered_evening}
