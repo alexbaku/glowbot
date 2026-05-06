@@ -472,15 +472,15 @@ async def get_single_product_recommendation(
 
     routine = SkincareRoutine.model_validate(ctx.deps.routine_json)
 
-    # Try to find the matching step in the routine
+    # Try to find the matching step in the routine using full-phrase matching only.
+    # Word-split matching (e.g. "acid" from "azelaic acid") causes false positives —
+    # it would match "ascorbic acid" (Vitamin C) when the user asks for azelaic acid.
     ing_lower = ingredient.lower()
     matched_step = None
     for step in routine.morning + routine.evening:
         if (
             ing_lower in step.step_name.lower()
             or ing_lower in step.ingredient_category.lower()
-            or any(word in step.step_name.lower() for word in ing_lower.split())
-            or any(word in step.ingredient_category.lower() for word in ing_lower.split())
         ):
             matched_step = step
             break
