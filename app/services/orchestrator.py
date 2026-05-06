@@ -82,14 +82,25 @@ def _is_profile_sufficient(profile: UserProfile) -> bool:
 
 
 def _is_confirmation(message: str) -> bool:
-    """Check if the message is a positive confirmation."""
+    """Check if the message is a positive confirmation.
+
+    Uses word-boundary matching to avoid false positives — e.g. "ok" is a
+    substring of "looks" and "book"; "yes" is a substring of "yesterday".
+    """
     lower = message.lower().strip()
-    signals = [
-        "yes", "yeah", "yep", "correct", "looks good", "that's right",
-        "confirmed", "confirm", "ok", "okay", "perfect", "great",
-        "כן", "נכון", "מאשר", "מאשרת", "בסדר", "מצוין",
+    patterns = [
+        r"\byes\b", r"\byeah\b", r"\byep\b", r"\bcorrect\b",
+        r"\blooks good\b", r"\bthat'?s right\b",
+        r"\bconfirmed\b", r"\bconfirm\b", r"\bok\b", r"\bokay\b",
+        r"\bperfect\b", r"\bgreat\b",
+        r"(?:^|[\s,\.!?])כן(?:$|[\s,\.!?])",
+        r"(?:^|[\s,\.!?])נכון(?:$|[\s,\.!?])",
+        r"(?:^|[\s,\.!?])מאשר(?:$|[\s,\.!?])",
+        r"(?:^|[\s,\.!?])מאשרת(?:$|[\s,\.!?])",
+        r"(?:^|[\s,\.!?])בסדר(?:$|[\s,\.!?])",
+        r"(?:^|[\s,\.!?])מצוין(?:$|[\s,\.!?])",
     ]
-    return any(sig in lower for sig in signals)
+    return any(re.search(p, lower) for p in patterns)
 
 
 def _wants_details(message: str) -> bool:
@@ -134,13 +145,23 @@ DISCLAIMER_HE = (
 
 
 def _is_terms_agreement(message: str) -> bool:
-    """Check if the message is an explicit agreement to the disclaimer."""
+    """Check if the message is an explicit agreement to the disclaimer.
+
+    Bare "agree" is a substring of "disagree" — use word-boundary matching
+    and require the more specific forms instead.
+    """
     lower = message.lower().strip()
-    signals = [
-        "i agree", "agree", "agreed", "yes i agree", "ok i agree", "i accept", "accept",
-        "אני מסכימה", "אני מסכים", "מסכימה", "מסכים", "מאשרת", "מאשר",
+    patterns = [
+        r"\bi agree\b", r"\bagreed\b", r"\byes i agree\b", r"\bok i agree\b",
+        r"\bi accept\b", r"\baccept\b",
+        r"(?:^|[\s,\.!?])אני מסכימה(?:$|[\s,\.!?])",
+        r"(?:^|[\s,\.!?])אני מסכים(?:$|[\s,\.!?])",
+        r"(?:^|[\s,\.!?])מסכימה(?:$|[\s,\.!?])",
+        r"(?:^|[\s,\.!?])מסכים(?:$|[\s,\.!?])",
+        r"(?:^|[\s,\.!?])מאשרת(?:$|[\s,\.!?])",
+        r"(?:^|[\s,\.!?])מאשר(?:$|[\s,\.!?])",
     ]
-    return any(sig in lower for sig in signals)
+    return any(re.search(p, lower) for p in patterns)
 
 
 def _wants_restart(message: str) -> bool:
