@@ -1,19 +1,14 @@
 """
-Product Linker Agent — maps routine steps to iHerb affiliate search links.
+Product Linker Agent — maps routine steps to plain-text product recommendations.
 
 Takes a completed SkincareRoutine + UserProfile, returns a ShoppingList.
 Each recommendation contains:
-  - An optimised iHerb search query for that step
-  - A full affiliate URL built from the configurable search template
-  - A personalised one-liner note referencing the user's skin profile
-
-The affiliate URL template is read from config so it can be swapped
-from referral code to a formal affiliate link without code changes.
+  - 2-3 specific product name suggestions appropriate for the Israeli market
+  - A personalised note referencing the user's skin profile
 """
 
 import os
 from dataclasses import dataclass
-from urllib.parse import quote_plus
 
 from pydantic_ai import Agent, RunContext
 
@@ -31,11 +26,10 @@ if not os.environ.get("ANTHROPIC_API_KEY"):
 
 @dataclass
 class ProductLinkerDeps:
-    """Everything the product linker needs for one shopping list."""
+    """Everything the product linker needs for one recommendation list."""
 
     routine: SkincareRoutine
     profile: UserProfile
-    search_template: str  # e.g. "https://il.iherb.com/search?query={query}&rcode=VZH480"
 
 
 product_linker_agent = Agent(
@@ -43,14 +37,6 @@ product_linker_agent = Agent(
     deps_type=ProductLinkerDeps,
     output_type=ShoppingList,
 )
-
-
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
-
-def build_iherb_url(search_template: str, search_query: str) -> str:
-    """Construct a full iHerb affiliate URL from the template and raw query."""
-    return search_template.format(query=quote_plus(search_query))
 
 
 # ── Dynamic system prompt ────────────────────────────────────────────────────
@@ -95,9 +81,8 @@ async def build_system_prompt(ctx: RunContext[ProductLinkerDeps]) -> str:
     else:
         lang_instruction = "Write the intro and outro in English."
 
-    return f"""You are GlowBot's product curator. Your job is to generate a personalised
-iHerb shopping list that maps each step in the user's skincare routine to a
-specific search query on iHerb.
+    return f"""You are GlowBot's product curator. Your job is to suggest specific, real products
+for each step in the user's personalised skincare routine.
 
 {lang_instruction}
 
@@ -119,27 +104,23 @@ ROUTINE STEPS TO MATCH:
 YOUR TASK:
 For EACH routine step above, produce one ProductRecommendation with:
 
-1. step_name      — copy exactly from the step (e.g. "Cleanser")
-2. search_query   — 3-6 clean English keywords optimised for iHerb search
-                    (iHerb is English-language; always write queries in English)
-                    - Strip percentages and filler words
-                    - Keep the key active ingredient(s) and product type
-                    - Add "fragrance free" if the user has sensitivities
-                    - Add "pregnancy safe" if pregnant/nursing
-                    - Good: "salicylic acid gel cleanser fragrance free"
-                    - Bad:  "gentle gel cleanser with salicylic acid 0.5-2%"
-3. iherb_url      — leave this as an empty string "" — it will be filled in
-                    automatically after you respond
-4. note           — one personalised sentence explaining what to look for,
-                    referencing the user's specific skin type or concern
-                    e.g. "Look for fragrance-free formulas — your sensitivity
-                    means even 'natural' fragrances can cause flare-ups"
+1. step_name          — copy exactly from the step (e.g. "Cleanser")
+2. product_suggestions — a list of 2-3 specific product names that fit this step.
+                         Prioritise brands widely available in Israel (iHerb IL,
+                         Amazon IL, or local pharmacies like Super-Pharm, Newpharm).
+                         Use real, well-known products — no invented names.
+                         Examples: "CeraVe Foaming Facial Cleanser",
+                                   "La Roche-Posay Effaclar Purifying Gel",
+                                   "The Ordinary Niacinamide 10% + Zinc 1%"
+3. note               — one personalised sentence explaining what to look for
+                         and why it suits this user's specific skin type or concern.
+                         e.g. "Your combination skin needs something that removes
+                         oil without stripping — avoid creamy or oil-based cleansers."
 
-INTRO: A warm single sentence introducing the shopping list.
-OUTRO: A brief practical tip (e.g. sort by rating on iHerb, patch test first).
+INTRO: A warm single sentence introducing the recommendations.
+OUTRO: One practical tip (e.g. introduce one new product at a time, patch test first).
 
 IMPORTANT:
 - One recommendation per routine step — do not skip any step
-- search_query must always be in English regardless of user language
-- Do not invent product brand names — keep queries ingredient/category focused
-- The iherb_url field MUST be left as "" (empty string)"""
+- Only suggest products that genuinely exist and match the step's ingredient category
+- Respect all safety constraints above — no retinoids if pregnant, avoid known allergens"""

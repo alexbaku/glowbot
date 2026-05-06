@@ -129,20 +129,19 @@ class OrchestratorResult(BaseModel):
 
 
 class ProductRecommendation(BaseModel):
-    """One iHerb product recommendation linked to a routine step."""
+    """One product recommendation linked to a routine step."""
 
     step_name: str = Field(description="e.g. 'Cleanser', 'Vitamin C Serum'")
-    search_query: str = Field(description="Clean search terms for iHerb, e.g. 'salicylic acid gel cleanser'")
-    iherb_url: str = Field(description="Full affiliate search URL")
-    note: str = Field(description="Personalised one-liner, e.g. 'fragrance-free for your sensitivity'")
+    product_suggestions: list[str] = Field(description="2-3 specific product names, e.g. ['CeraVe Foaming Cleanser', 'La Roche-Posay Effaclar Gel']")
+    note: str = Field(description="Personalised one-liner explaining what to look for and why")
 
 
 class ShoppingList(BaseModel):
-    """Formatted shopping list returned by the product linker agent."""
+    """Formatted product recommendation list returned by the product linker agent."""
 
-    intro: str = Field(description="Warm one-sentence intro to the shopping list")
+    intro: str = Field(description="Warm one-sentence intro")
     recommendations: list[ProductRecommendation]
-    outro: str = Field(description="Brief closing tip, e.g. filter by rating on iHerb")
+    outro: str = Field(description="Brief practical closing tip")
 
 
 class RoutineStep(BaseModel):

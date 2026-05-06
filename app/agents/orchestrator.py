@@ -436,8 +436,8 @@ async def update_routine_steps(
 
 @orchestrator_agent.tool
 async def get_full_shopping_list(ctx: RunContext[OrchestratorDeps]) -> str:
-    """Generate a complete personalised iHerb shopping list for ALL steps in the routine.
-    Call this ONLY when the user explicitly asks for a full shopping list or all product links
+    """Generate personalised product recommendations for ALL steps in the routine.
+    Call this ONLY when the user explicitly asks for product recommendations or a shopping list
     (e.g. "send me the shopping list", "I want all the products", "אני רוצה את כל המוצרים")."""
     if not ctx.deps.routine_json:
         return "No routine has been generated yet — generate a routine first."
@@ -458,7 +458,7 @@ async def get_single_product_recommendation(
     ctx: RunContext[OrchestratorDeps],
     ingredient: str,
 ) -> str:
-    """Get an iHerb recommendation for ONE specific product or ingredient.
+    """Get a product recommendation for ONE specific product or ingredient.
     Call this when the user asks for a recommendation for a single specific product
     (e.g. "recommend an azelaic acid serum", "which cleanser?", "מה ממליץ על ויטמין C?").
     ingredient: plain English description of what they're looking for
