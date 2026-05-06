@@ -162,7 +162,15 @@ async def build_system_prompt(ctx: RunContext[OrchestratorDeps]) -> str:
 
     # Language instruction
     if p.language == "hebrew":
-        lang_instruction = "The user speaks Hebrew. Respond in Hebrew."
+        lang_instruction = (
+            "The user speaks Hebrew. Respond entirely in Hebrew. "
+            "Use natural, colloquial Israeli Hebrew — NOT word-for-word translations from English. "
+            "For example: say 'בת כמה את?' not 'כמה שנים יש לך?', "
+            "'יש לך אלרגיות?' not 'האם את סובלת מאלרגיות?', "
+            "'מה הסוג של העור שלך?' not 'מהו סוג עורך?'. "
+            "Write the way a real Israeli would speak in a WhatsApp conversation — "
+            "casual, friendly, and direct. Never translate English idioms literally."
+        )
     else:
         lang_instruction = (
             "Respond in the same language the user writes in. Default to English."

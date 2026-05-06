@@ -86,7 +86,14 @@ async def build_system_prompt(ctx: RunContext[UserProfile]) -> str:
 
     # Language instruction
     if p.language == "hebrew":
-        lang_instruction = "Respond in Hebrew."
+        lang_instruction = (
+            "Write everything in natural, colloquial Israeli Hebrew — "
+            "including step names, narrative summary, usage tips, key notes, and 'why' explanations. "
+            "Do NOT translate English terms word-for-word. Use the way a real Israeli would phrase things: "
+            "e.g. 'קרם לחות' not 'מכסה לחות', 'קרם הגנה' not 'קרם שמש', "
+            "'סרום ויטמין C' (keep ingredient names in English/Latin when that's the common usage in Israel). "
+            "The narrative_summary should feel like a warm WhatsApp message from a knowledgeable friend, not a medical document."
+        )
     else:
         lang_instruction = "Respond in the same language as the user's profile. Default to English."
 
