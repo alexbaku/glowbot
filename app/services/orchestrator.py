@@ -349,13 +349,41 @@ class GlowBotService:
                         else:
                             ack = "Wonderful! Let me create your personalized skincare routine now... ⏳"
 
-                        result = await asyncio.wait_for(
-                            routine_planner_agent.run(
-                                "Generate a complete personalized skincare routine based on my profile.",
-                                deps=profile,
-                            ),
-                            timeout=120.0,
-                        )
+                        # Save REVIEWING state before generation so a timeout leaves
+                        # the user retryable (next "כן"/"yes" re-enters this path).
+                        user.conversation_phase = ConversationPhase.REVIEWING.value
+                        await repo.save(db, user)
+
+                        result = None
+                        for attempt in range(3):
+                            try:
+                                result = await asyncio.wait_for(
+                                    routine_planner_agent.run(
+                                        "Generate a complete personalized skincare routine based on my profile.",
+                                        deps=profile,
+                                    ),
+                                    timeout=120.0,
+                                )
+                                break
+                            except TimeoutError:
+                                logger.warning(
+                                    f"Routine generation attempt {attempt + 1}/3 timed out | User: {phone_number}"
+                                )
+                                if attempt < 2:
+                                    await asyncio.sleep(2)
+
+                        if result is None:
+                            if profile.language == "hebrew":
+                                return [
+                                    "הייתה עיכוב בייצור הרוטינה שלך 🙏\n"
+                                    "שלחי *כן* שוב בעוד דקה ואנסה מחדש."
+                                ]
+                            else:
+                                return [
+                                    "Routine generation is taking longer than expected 🙏\n"
+                                    "Send *yes* again in a minute and I'll retry."
+                                ]
+
                         routine = result.output
                         routine_json = routine.model_dump(mode="json")
 
@@ -478,4 +506,4 @@ class GlowBotService:
 
         except Exception as e:
             logger.error(f"Error handling message: {e}", exc_info=True)
-            return ["I'm sorry, something went wrong. Could you try again?"]
+            return ["Something went wrong, please try again 🙏"]
