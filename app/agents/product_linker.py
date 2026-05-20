@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pydantic_ai import Agent, RunContext
 
 from app.config import Settings
+from app.data.cruelty_free_brands import ALL_CRUELTY_FREE_BRANDS, WELL_KNOWN_CF_BRANDS
 from app.schemas import (
     BudgetRange,
     ShoppingList,
@@ -81,6 +82,23 @@ async def build_system_prompt(ctx: RunContext[ProductLinkerDeps]) -> str:
     else:
         lang_instruction = "Write the intro and outro in English."
 
+    # Cruelty-free constraint block
+    if p.cruelty_free_preference is True:
+        cf_brands_str = ", ".join(WELL_KNOWN_CF_BRANDS)
+        cruelty_free_block = f"""
+CRUELTY-FREE REQUIREMENT (MANDATORY):
+  This user ONLY wants products from cruelty-free brands certified by Leaping Bunny or PETA.
+  - ONLY recommend brands from this certified list (or others you know are Leaping Bunny/PETA certified):
+    {cf_brands_str}
+  - Do NOT recommend: CeraVe, La Roche-Posay, Neutrogena, Garnier, L'Oreal, Maybelline,
+    Olay, Estée Lauder, MAC, Clinique, Lancôme, Kiehl's, or any brand owned by L'Oreal Group
+    or Estée Lauder Companies unless they are independently certified cruelty-free.
+  - If you are unsure whether a brand is cruelty-free, choose a brand from the list above instead.
+  - Add "🐰 Leaping Bunny certified" in the note for each recommendation to reassure the user.
+"""
+    else:
+        cruelty_free_block = ""
+
     return f"""You are GlowBot's product curator. Your job is to suggest specific, real products
 for each step in the user's personalised skincare routine.
 
@@ -97,7 +115,7 @@ SAFETY CONSTRAINTS:
 
 BUDGET GUIDANCE:
   {budget_guidance}
-
+{cruelty_free_block}
 ROUTINE STEPS TO MATCH:
 {steps_str}
 

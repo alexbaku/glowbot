@@ -90,6 +90,7 @@ class UserProfile(BaseModel):
     health_screened: bool = False  # True once allergies/sensitivities/meds addressed
     turns_since_sufficient: int = 0  # tracks turns after all required fields filled
     terms_accepted: bool = False  # True once user explicitly agrees to disclaimer
+    cruelty_free_preference: Optional[bool] = None  # True = only Leaping Bunny certified brands
 
 
 # ── Agent result types ───────────────────────────────────────────────────────
@@ -116,6 +117,7 @@ class ProfileUpdates(BaseModel):
     notes: Optional[str] = None
     image_analysis: Optional[str] = None
     health_screened: Optional[bool] = None
+    cruelty_free_preference: Optional[bool] = None
 
 
 class OrchestratorResult(BaseModel):

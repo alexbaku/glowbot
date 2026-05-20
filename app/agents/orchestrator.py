@@ -88,6 +88,8 @@ def _format_known(p: UserProfile) -> str:
         known.append(f"Evening routine: {p.current_routine_evening}")
     if p.preferences:
         known.append(f"Preferences: {', '.join(p.preferences)}")
+    if p.cruelty_free_preference is not None:
+        known.append(f"Cruelty-free preference: {'yes — Leaping Bunny certified brands only' if p.cruelty_free_preference else 'no preference'}")
     if p.knowledge_level:
         known.append(f"Knowledge level: {p.knowledge_level.value}")
     if p.notes:
@@ -231,13 +233,20 @@ MINIMUM DATA REQUIRED (all must be collected):
 7. Budget range
 8. Current skincare routine (or confirmation they don't have one)
 
+OPTIONAL — ask once all required fields above are collected:
+- Cruelty-free preference: "Do you prefer cruelty-free products certified by Leaping Bunny?"
+  Set cruelty_free_preference=true or false in profile_updates based on the answer.
+  This is NOT required — only ask it if items in STILL NEEDED only show this one.
+  Ask it naturally: "One last thing — do you prefer cruelty-free products? 🐰"
+
 CRITICAL RULES:
 - NEVER ask about anything already listed in COLLECTED SO FAR above — that data is confirmed
 - ONLY ask about items still in STILL NEEDED
 - Extract any new profile data into profile_updates every single turn
 - Only set fields that changed — null means "no change"
 - For health fields (is_pregnant, is_nursing, etc.), set the specific field
-- Set health_screened=true once you've asked about allergies/sensitivities/medications"""
+- Set health_screened=true once you've asked about allergies/sensitivities/medications
+- Set cruelty_free_preference=true/false once the user answers the cruelty-free question"""
 
     elif deps.phase == ConversationPhase.REVIEWING:
         phase_block = f"""PHASE: REVIEWING
